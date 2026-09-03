@@ -1,0 +1,1917 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Rework Tracker</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap');
+
+  :root{
+    --navy:#13304E; --navy-soft:#1D4570;
+    --paper:#EEF2F1; --paper-line:#D7DFDC;
+    --cyan:#4FA3D1; --cyan-soft:#B9DCEE;
+    --pending:#C8711F; --pending-bg:#FBEADA;
+    --done:#2C8659; --done-bg:#E1F0E7;
+    --awaiting:#5C7085; --awaiting-bg:#E6EAED;
+    --text:#1C242B; --text-dim:#5C6A72;
+    --on-navy:#EAF1F6; --on-navy-dim:#9FB4C4;
+    --font-display:'Barlow Condensed', Impact, sans-serif;
+    --font-body:'Inter', -apple-system, sans-serif;
+    --font-mono:'IBM Plex Mono','SF Mono', monospace;
+  }
+  *{ box-sizing:border-box; }
+  body{ margin:0; background:#C6CBCA; font-family:var(--font-body); color:var(--text); padding:32px 16px; }
+  .shell{ max-width:1180px; margin:0 auto; }
+
+  /* ---------- header ---------- */
+  .app-header{
+    background:var(--navy); color:var(--on-navy); padding:26px 36px; position:relative;
+    margin-bottom:22px; border:1px solid var(--navy);
+  }
+  .app-header::before, .app-header::after,
+  .app-header .tick-br, .app-header .tick-bl{
+    content:''; position:absolute; width:14px; height:14px; opacity:.55;
+  }
+  .app-header::before{ top:8px; left:8px; border-top:1.5px solid var(--cyan); border-left:1.5px solid var(--cyan); }
+  .app-header::after{ top:8px; right:8px; border-top:1.5px solid var(--cyan); border-right:1.5px solid var(--cyan); }
+  .app-header .tick-bl{ bottom:8px; left:8px; border-bottom:1.5px solid var(--cyan); border-left:1.5px solid var(--cyan); }
+  .app-header .tick-br{ bottom:8px; right:8px; border-bottom:1.5px solid var(--cyan); border-right:1.5px solid var(--cyan); }
+  .app-header .eyebrow{ font-family:var(--font-mono); font-size:11px; letter-spacing:.18em; text-transform:uppercase; color:var(--cyan-soft); margin:0 0 6px; }
+  .app-header h1{ font-family:var(--font-display); font-weight:600; font-size:32px; letter-spacing:.02em; text-transform:uppercase; margin:0; }
+  .app-header p{ margin:8px 0 0; color:var(--on-navy-dim); font-size:13px; max-width:640px; }
+  .app-header .rule{ height:2px; width:56px; background:var(--cyan); margin-top:14px; }
+
+  .who-bar{ display:flex; align-items:center; gap:6px; justify-content:flex-end; margin:-10px 0 8px; font-size:12.5px; color:var(--text-dim); flex-wrap:wrap; }
+  .who-bar strong{ color:var(--navy); }
+  .link-btn{ background:none; border:none; color:var(--cyan); text-decoration:underline; cursor:pointer; font-size:12.5px; padding:0; font-family:var(--font-body); }
+  .link-btn:hover{ color:var(--navy); }
+
+  .login-overlay{
+    position:fixed; inset:0; background:var(--navy); z-index:1000;
+    display:none; align-items:center; justify-content:center; padding:20px;
+  }
+  .login-card{ background:#fff; max-width:380px; width:100%; padding:32px; text-align:center; border-top:4px solid var(--cyan); }
+  .login-card .eyebrow{ font-family:var(--font-mono); font-size:11px; letter-spacing:.16em; text-transform:uppercase; color:var(--text-dim); margin:0 0 6px; }
+  .login-card h2{ font-family:var(--font-display); font-size:26px; text-transform:uppercase; margin:0 0 14px; color:var(--navy); }
+  .login-card p.sub{ font-size:13px; color:var(--text-dim); margin:0 0 18px; line-height:1.5; }
+  .login-card input{ width:100%; padding:10px 12px; border:1px solid var(--paper-line); font-family:var(--font-body); font-size:14px; margin-bottom:12px; box-sizing:border-box; }
+  .login-card .btn{ width:100%; }
+  .login-note{ margin-top:14px; font-size:12px; color:var(--pending); min-height:16px; line-height:1.4; }
+  .login-caveat{ margin-top:20px; padding-top:16px; border-top:1px dashed var(--paper-line); font-size:11px; color:var(--text-dim); line-height:1.5; text-align:left; }
+
+  .access-panel{ background:#fff; border:1px solid var(--paper-line); padding:18px 20px; margin:0 0 22px; }
+  .access-panel h4{ font-family:var(--font-display); font-size:15px; text-transform:uppercase; color:var(--navy); margin:0 0 12px; }
+  .access-row{ display:flex; justify-content:space-between; align-items:center; padding:6px 0; border-bottom:1px solid var(--paper-line); font-family:var(--font-mono); font-size:12.5px; }
+  .access-row button{ background:none; border:none; color:var(--text-dim); font-size:11px; cursor:pointer; font-family:var(--font-body); }
+  .access-row button:hover{ color:var(--pending); }
+  .access-add{ display:flex; gap:8px; margin-top:14px; }
+  .access-add input{ flex:1; padding:8px 10px; border:1px solid var(--paper-line); font-family:var(--font-body); font-size:13px; }
+  .access-caveat{ margin-top:14px; font-size:11px; color:var(--text-dim); line-height:1.5; }
+
+  .backup-card p.sub{ font-size:12.5px; color:var(--text-dim); margin:0 0 16px; line-height:1.55; max-width:640px; }
+  .backup-actions{ display:flex; gap:10px; flex-wrap:wrap; align-items:center; }
+  .backup-actions input[type=file]{
+    position:absolute; width:1px; height:1px; padding:0; margin:-1px;
+    overflow:hidden; clip:rect(0,0,0,0); white-space:nowrap; border:0;
+  }
+
+  .banner.nudge{ background:var(--cyan-soft); color:var(--navy); border-left:3px solid var(--cyan); display:none; align-items:center; gap:14px; flex-wrap:wrap; justify-content:space-between; }
+  .banner.nudge.show{ display:flex; }
+  .banner.nudge .nudge-actions{ display:flex; gap:14px; flex-shrink:0; }
+  .banner.nudge .link-btn{ color:var(--navy); text-decoration:underline; font-weight:600; }
+  .cloud-section{ margin-top:22px; padding-top:20px; border-top:1px dashed var(--paper-line); }
+  .cloud-section h3{ font-family:var(--font-display); font-size:16px; text-transform:uppercase; color:var(--navy); margin:0 0 6px; }
+  .cloud-fields{ display:flex; gap:14px; flex-wrap:wrap; margin:14px 0; }
+  .cloud-fields .field{ flex:1; min-width:220px; }
+  .cloud-fields label{ display:block; font-size:11px; letter-spacing:.06em; text-transform:uppercase; color:var(--text-dim); font-weight:600; margin-bottom:5px; }
+  .cloud-fields input{ width:100%; box-sizing:border-box; padding:9px 10px; border:1px solid var(--paper-line); font-family:var(--font-mono); font-size:12.5px; background:#FAFBFA; }
+  .cloud-fields input:focus{ outline:2px solid var(--cyan); outline-offset:1px; }
+  .cloud-result{ margin-top:14px; padding:14px 16px; background:#F7F8F6; border-left:3px solid var(--cyan); font-size:12.5px; line-height:1.6; display:none; white-space:pre-wrap; word-break:break-all; }
+  .cloud-result.show{ display:block; }
+
+  .card{ background:#fff; border:1px solid var(--paper-line); padding:24px; margin-bottom:22px; }
+
+  /* ---------- dropzone ---------- */
+  .dropzone{
+    border:2px dashed var(--paper-line); min-height:110px;
+    display:flex; flex-direction:column; align-items:center; justify-content:center;
+    text-align:center; padding:20px; transition:border-color .15s, background .15s;
+    font-size:13px; color:var(--text-dim);
+  }
+  .dropzone.drag{ border-color:var(--cyan); background:#F0F8FC; }
+  .dropzone-label{ display:flex; flex-direction:column; align-items:center; cursor:pointer; }
+  .dropzone strong{ color:var(--navy); font-family:var(--font-body); font-weight:600; display:block; margin-bottom:4px; font-size:14px; }
+  .browse-btn{ display:inline-block; margin-top:12px; padding:8px 16px; background:var(--navy); color:var(--on-navy); font-family:var(--font-body); font-weight:600; font-size:12.5px; }
+  .dropzone-label:hover .browse-btn{ background:var(--navy-soft); }
+  .dropzone .filename{ margin-top:10px; font-family:var(--font-mono); font-size:12px; color:var(--navy); }
+  .dropzone input[type=file]{
+    position:absolute; width:1px; height:1px; padding:0; margin:-1px;
+    overflow:hidden; clip:rect(0,0,0,0); white-space:nowrap; border:0;
+  }
+
+  .btn{ font-family:var(--font-body); font-weight:600; font-size:13.5px; padding:11px 20px; border:none; cursor:pointer; }
+  .btn-primary{ background:var(--navy); color:var(--on-navy); }
+  .btn-primary:hover{ background:var(--navy-soft); }
+  .btn-primary:disabled{ background:#8B959C; cursor:not-allowed; }
+  .btn-ghost{ background:none; border:1px solid var(--paper-line); color:var(--text-dim); }
+  .btn-ghost:hover{ border-color:var(--navy); color:var(--navy); }
+
+  .status-line{ margin-top:12px; font-family:var(--font-mono); font-size:12px; color:var(--text-dim); display:flex; align-items:center; gap:8px; min-height:16px; }
+  .spinner{ width:11px; height:11px; border:2px solid var(--paper-line); border-top-color:var(--cyan); border-radius:50%; flex-shrink:0; }
+  @media (prefers-reduced-motion:no-preference){ .spinner{ animation:spin .7s linear infinite; } }
+  @keyframes spin{ to{ transform:rotate(360deg); } }
+
+  .banner{ padding:12px 14px; font-size:13px; margin-top:14px; display:none; line-height:1.5; }
+  .banner.error{ background:var(--pending-bg); color:var(--pending); border-left:3px solid var(--pending); }
+  .banner.warn{ background:#FBF4E4; color:#8A6A1F; border-left:3px solid var(--cyan); }
+  .banner.success{ background:var(--done-bg); color:var(--done); border-left:3px solid var(--done); }
+  .banner.show{ display:block; }
+
+  .filetable{ width:100%; border-collapse:collapse; font-family:var(--font-mono); font-size:12.5px; margin-top:16px; }
+  #fileListWrap{ overflow-x:auto; -webkit-overflow-scrolling:touch; }
+  .filetable th{ text-align:left; font-family:var(--font-body); font-size:10.5px; letter-spacing:.07em; text-transform:uppercase; color:var(--text-dim); font-weight:600; padding-bottom:8px; border-bottom:1px solid var(--paper-line); }
+  .filetable td{ padding:9px 10px 9px 0; border-bottom:1px solid var(--paper-line); vertical-align:middle; }
+  .filetable input[type=date]{ padding:6px 8px; border:1px solid var(--paper-line); font-family:var(--font-mono); font-size:12px; background:#FAFBFA; }
+  .filetable input:focus{ outline:2px solid var(--cyan); outline-offset:1px; }
+  .filetable .fname{ font-family:var(--font-body); font-weight:500; color:var(--navy); word-break:break-all; max-width:260px; }
+  .filetable button.remove{ background:none; border:none; color:var(--text-dim); cursor:pointer; font-size:16px; line-height:1; }
+  .filetable button.remove:hover{ color:var(--pending); }
+  .status-cell{ display:flex; align-items:center; gap:6px; flex-wrap:wrap; }
+  .row-msg{ font-size:11px; color:var(--text-dim); }
+
+  .controls-row{ display:flex; align-items:center; justify-content:space-between; gap:16px; margin-top:16px; flex-wrap:wrap; }
+  .checkbox-field{ display:flex; align-items:center; gap:8px; font-size:12.5px; color:var(--text-dim); }
+  .checkbox-field input{ width:15px; height:15px; }
+
+  .badge{ font-family:var(--font-mono); font-size:10.5px; font-weight:600; letter-spacing:.06em; padding:3px 9px; text-transform:uppercase; display:inline-block; }
+  .badge.err{ background:var(--pending-bg); color:var(--pending); }
+  .badge.ok{ background:var(--done-bg); color:var(--done); }
+  .badge.skip{ background:#FBF4E4; color:#8A6A1F; }
+  .badge.pending{ background:#EEF0EC; color:var(--text-dim); }
+
+  .empty-note{ color:var(--text-dim); font-size:13px; }
+  .clear-link{ font-size:11px; color:var(--text-dim); background:none; border:none; cursor:pointer; text-decoration:underline; margin-top:14px; padding:0; }
+  .clear-link:hover{ color:var(--pending); }
+
+  /* ---------- history ---------- */
+  .history h2{ font-family:var(--font-display); font-size:19px; text-transform:uppercase; letter-spacing:.02em; margin:0 0 14px; color:var(--navy); }
+  table.hist{ width:100%; border-collapse:collapse; font-family:var(--font-mono); font-size:12.5px; }
+  #historyBody{ overflow-x:auto; -webkit-overflow-scrolling:touch; }
+  table.hist th{ text-align:left; font-family:var(--font-body); font-size:10.5px; letter-spacing:.07em; text-transform:uppercase; color:var(--text-dim); font-weight:600; padding-bottom:8px; border-bottom:1px solid var(--paper-line); }
+  table.hist td{ padding:9px 0; border-bottom:1px solid var(--paper-line); }
+  table.hist tr.row:hover{ background:#FAFAF9; cursor:pointer; }
+  table.hist td.actions{ text-align:right; }
+  table.hist button{ background:none; border:none; font-family:var(--font-body); font-size:11.5px; color:var(--text-dim); cursor:pointer; padding:2px 6px; }
+  table.hist button:hover{ color:var(--pending); }
+
+  /* ---------- dashboard ---------- */
+  .dash{ background:var(--paper); border-left:6px solid var(--cyan); box-shadow:0 12px 28px -14px rgba(19,48,78,.35); }
+  .dash-header{ background:var(--navy); color:var(--on-navy); padding:24px 32px 20px; display:flex; justify-content:space-between; align-items:flex-end; gap:20px; flex-wrap:wrap; }
+  .dash-header .eyebrow{ font-family:var(--font-mono); font-size:10.5px; letter-spacing:.16em; text-transform:uppercase; color:var(--cyan-soft); margin:0 0 6px; }
+  .dash-header h3{ font-family:var(--font-display); font-weight:600; font-size:26px; text-transform:uppercase; margin:0; }
+  .dash-header .meta{ text-align:right; font-family:var(--font-mono); font-size:11px; color:var(--on-navy-dim); line-height:1.7; }
+  .dash-header .meta strong{ color:var(--on-navy); font-weight:500; }
+
+  .dash-hero{ display:grid; grid-template-columns:200px 1fr; gap:0; border-bottom:1px solid var(--paper-line); }
+  .ring-wrap{ padding:24px 32px; display:flex; align-items:center; justify-content:center; border-right:1px solid var(--paper-line); }
+  .ring-inner{ position:relative; width:150px; height:150px; }
+  .ring-inner svg{ display:block; }
+  .ring-label{ position:absolute; inset:0; display:flex; flex-direction:column; align-items:center; justify-content:center; }
+  .ring-label .pct{ font-family:var(--font-mono); font-size:30px; font-weight:600; color:var(--navy); line-height:1; }
+  .ring-label .cap{ font-family:var(--font-body); font-size:10px; letter-spacing:.08em; text-transform:uppercase; color:var(--text-dim); margin-top:4px; }
+  .hero-stats{ display:flex; flex-wrap:wrap; align-items:center; gap:0; padding:24px 32px; }
+  .hero-stat{ padding-right:32px; margin-right:32px; border-right:1px solid var(--paper-line); }
+  .hero-stat:last-child{ border-right:none; margin-right:0; padding-right:0; }
+  .hero-stat .label{ font-size:10.5px; letter-spacing:.13em; text-transform:uppercase; color:var(--text-dim); margin:0 0 8px; font-weight:600; }
+  .hero-stat .value{ font-family:var(--font-mono); font-size:28px; font-weight:600; color:var(--navy); }
+  .hero-delta{ display:inline-flex; align-items:center; gap:4px; font-family:var(--font-mono); font-size:12px; font-weight:600; margin-top:8px; padding:3px 8px; }
+  .hero-delta.good{ color:var(--done); background:var(--done-bg); }
+  .hero-delta.bad{ color:var(--pending); background:var(--pending-bg); }
+  .hero-delta.flat{ color:var(--text-dim); background:#EEF0EC; }
+
+  .cat-section, .trend-section, .problem-section, .pending-section{ padding:22px 32px; border-bottom:1px solid var(--paper-line); }
+  .cat-section h4, .trend-section h4, .problem-section h4, .pending-section h4{
+    font-family:var(--font-display); font-size:17px; text-transform:uppercase; letter-spacing:.02em; margin:0 0 4px; color:var(--navy);
+  }
+  .section-sub{ font-size:11.5px; color:var(--text-dim); margin:0 0 16px; }
+
+  .cat-grid{ display:grid; grid-template-columns:1fr 1fr; gap:16px 32px; }
+  .cat-row .cat-name{ font-family:var(--font-body); font-weight:600; font-size:13px; color:var(--navy); display:flex; justify-content:space-between; margin-bottom:6px; }
+  .cat-row .cat-count{ font-family:var(--font-mono); font-size:11px; color:var(--text-dim); font-weight:500; }
+  .bar-track{ height:12px; background:#E4E9E5; position:relative; display:flex; overflow:hidden; }
+  .bar-seg.awaiting-construction{ background:var(--awaiting); }
+  .bar-seg.awaiting-quality{ background:var(--pending); }
+  .bar-seg.pass{ background:var(--done); }
+
+  .status-legend{ display:flex; gap:16px; flex-wrap:wrap; margin:10px 0 18px; font-family:var(--font-mono); font-size:11px; color:var(--text-dim); }
+  .status-legend span{ display:inline-flex; align-items:center; gap:6px; }
+  .status-legend i{ width:9px; height:9px; border-radius:50%; display:inline-block; }
+  .status-legend i.awaiting-construction{ background:var(--awaiting); }
+  .status-legend i.awaiting-quality{ background:var(--pending); }
+  .status-legend i.pass{ background:var(--done); }
+
+  .problem-row{ display:flex; align-items:center; gap:12px; margin-bottom:10px; }
+  .problem-row .p-label{ width:260px; flex-shrink:0; font-size:12.5px; color:var(--text); }
+  .problem-row .p-bar-track{ flex:1; height:10px; background:#E4E9E5; position:relative; }
+  .problem-row .p-bar-fill{ height:100%; background:var(--pending); }
+  .problem-row .p-count{ width:34px; text-align:right; font-family:var(--font-mono); font-size:12px; color:var(--pending); font-weight:600; flex-shrink:0; }
+
+  .pending-controls{ display:flex; gap:10px; margin-bottom:14px; flex-wrap:wrap; align-items:center; }
+  .pending-controls input[type=text]{ flex:1; min-width:200px; padding:9px 10px; border:1px solid var(--paper-line); font-family:var(--font-body); font-size:13px; }
+  .pending-controls label{ display:flex; align-items:center; gap:6px; font-size:12px; color:var(--text-dim); min-height:32px; }
+  .pending-controls input[type=checkbox]{ width:18px; height:18px; flex-shrink:0; }
+
+  .item-filters{ display:grid; grid-template-columns:repeat(auto-fit, minmax(140px, 1fr)); gap:10px; margin-bottom:14px; }
+  .item-filters .filter-field label{ display:block; font-size:10px; letter-spacing:.06em; text-transform:uppercase; color:var(--text-dim); font-weight:600; margin-bottom:4px; }
+  .item-filters select, .item-filters input{
+    width:100%; box-sizing:border-box; padding:8px 8px; border:1px solid var(--paper-line);
+    font-family:var(--font-body); font-size:13px; background:#FAFBFA;
+  }
+  .item-filters select:focus, .item-filters input:focus{ outline:2px solid var(--cyan); outline-offset:1px; }
+
+  .pending-scroll{ max-height:360px; overflow-y:auto; overflow-x:auto; border:1px solid var(--paper-line); -webkit-overflow-scrolling:touch; }
+  table.items{ width:100%; border-collapse:collapse; font-size:12.5px; }
+  table.items th{ position:sticky; top:0; background:#fff; text-align:left; font-family:var(--font-body); font-size:10.5px; letter-spacing:.06em; text-transform:uppercase; color:var(--text-dim); font-weight:600; padding:8px 10px; border-bottom:1px solid var(--paper-line); }
+  table.items td{ padding:9px 10px; border-bottom:1px solid var(--paper-line); font-family:var(--font-mono); font-size:12px; }
+  table.items td.cat{ font-family:var(--font-body); color:var(--text-dim); }
+  table.items tr:last-child td{ border-bottom:none; }
+  .status-select{ font-family:var(--font-mono); font-size:10.5px; font-weight:600; letter-spacing:.02em; padding:4px 6px; border:1px solid transparent; cursor:pointer; }
+  .status-select.awaiting-construction{ background:var(--awaiting-bg); color:var(--awaiting); }
+  .status-select.awaiting-quality{ background:var(--pending-bg); color:var(--pending); }
+  .status-select.pass{ background:var(--done-bg); color:var(--done); }
+  .status-select:hover{ border-color:currentColor; }
+  .status-select:focus{ outline:2px solid var(--cyan); outline-offset:1px; }
+
+  .changelog-wrap{ margin-top:16px; border-top:1px dashed var(--paper-line); padding-top:16px; overflow-x:auto; -webkit-overflow-scrolling:touch; }
+  table.changelog{ width:100%; border-collapse:collapse; font-size:12px; }
+  table.changelog th{ text-align:left; font-family:var(--font-body); font-size:10.5px; letter-spacing:.06em; text-transform:uppercase; color:var(--text-dim); font-weight:600; padding:8px 10px; border-bottom:1px solid var(--paper-line); }
+  table.changelog td{ padding:7px 10px; border-bottom:1px solid var(--paper-line); font-family:var(--font-mono); font-size:11.5px; }
+  table.changelog td.who{ font-family:var(--font-body); color:var(--navy); font-weight:600; }
+  table.changelog td.change{ font-family:var(--font-body); }
+  table.changelog .arrow{ color:var(--text-dim); margin:0 4px; }
+
+  .dash-footer{ padding:18px 32px 22px; display:flex; justify-content:space-between; align-items:center; gap:16px; flex-wrap:wrap; }
+  .dash-footer p{ font-family:var(--font-mono); font-size:10px; color:var(--text-dim); margin:0; max-width:480px; line-height:1.6; }
+
+  .placeholder{ color:var(--text-dim); font-size:13.5px; padding:30px; text-align:center; border:1px dashed var(--paper-line); background:#fff; }
+
+  @media (max-width:720px){
+    body{ padding:16px 10px; }
+    .card{ padding:18px; }
+    .app-header{ padding:20px 18px; }
+    .app-header h1{ font-size:26px; }
+
+    .dash-hero{ grid-template-columns:1fr; }
+    .ring-wrap{ border-right:none; border-bottom:1px solid var(--paper-line); padding:20px; }
+    .cat-grid{ grid-template-columns:1fr; }
+    .problem-row .p-label{ width:120px; font-size:11.5px; }
+    .cat-section, .trend-section, .problem-section, .pending-section{ padding:18px 18px; }
+    .dash-header{ padding:20px 18px 18px; }
+    .hero-stats{ padding:18px; gap:16px 0; }
+    .hero-stat{ padding-right:16px; margin-right:16px; }
+    .login-card{ padding:24px 20px; }
+
+    /* Every text/email/date input and select at 16px+ stops iOS Safari
+       from auto-zooming the page when the field gets focus. */
+    input[type=text], input[type=email], input[type=date], input[type=number],
+    select, .item-filters input, .item-filters select, .status-select,
+    .cloud-fields input, .who-bar input, .filetable input, .filetable select,
+    #loginEmailInput, #jsonbinKeyInput, #jsonbinBinIdInput, #connectBinIdInput, #connectApiKeyInput,
+    #reportRecipientsInput, #reportCadenceInput{
+      font-size:16px !important;
+    }
+
+    /* Bigger, full-width tap targets beat cramming buttons into a row */
+    .backup-actions{ flex-direction:column; align-items:stretch; }
+    .backup-actions .btn{ width:100%; text-align:center; padding:13px 16px; }
+    .controls-row{ flex-direction:column; align-items:stretch; gap:12px; }
+    .controls-row .btn{ width:100%; }
+    .dash-footer{ flex-direction:column; align-items:stretch; }
+    .dash-footer > div{ display:flex; flex-direction:column; gap:8px; }
+    .dash-footer .btn{ width:100%; text-align:center; }
+    .browse-btn{ padding:11px 20px; }
+
+    .who-bar{ justify-content:flex-start; margin-top:0; }
+    .who-bar input{ width:100%; }
+    .cloud-fields{ flex-direction:column; }
+    .cloud-fields .field{ min-width:0; }
+
+    .filetable button.remove{ font-size:22px; padding:6px 10px; }
+    table.hist button, .link-btn{ padding:6px 4px; }
+    .clear-link{ padding:8px 0; display:inline-block; }
+
+    /* ---- Item table -> stacked cards ---- */
+    /* A row of table-cell dropdowns has no good way to reflow at phone
+       widths, so below this breakpoint the table stops behaving like a
+       table: headers disappear, each row becomes a bordered card, and
+       every cell prints its own column name (from data-label) above the
+       value instead of relying on column alignment. */
+    table.items thead{ display:none; }
+    table.items, table.items tbody, table.items tr, table.items td{ display:block; width:100%; }
+    table.items tr{ border:1px solid var(--paper-line); margin-bottom:10px; padding:4px 12px; }
+    table.items tr:last-child{ margin-bottom:0; }
+    table.items td{ border-bottom:1px solid #EEF1EF; padding:8px 0; }
+    table.items td:last-child{ border-bottom:none; }
+    table.items td[data-label]::before{
+      content:attr(data-label);
+      display:block;
+      font-family:var(--font-body); font-weight:600; font-size:10px;
+      letter-spacing:.06em; text-transform:uppercase; color:var(--text-dim);
+      margin-bottom:3px;
+    }
+    table.items td.cat{ font-family:var(--font-mono); }
+    .status-select{ width:100%; padding:9px 8px; font-size:13px !important; }
+    .pending-scroll{ max-height:none; }
+  }
+  @media print{ body{ background:#fff; padding:0; } .card, .clear-link{ display:none !important; } .dash{ box-shadow:none; } }
+</style>
+</head>
+<body>
+
+<div class="login-overlay" id="connectGate" style="display:none;">
+  <div class="login-card">
+    <p class="eyebrow">Field QA — Punch List</p>
+    <h2>Connect</h2>
+    <p class="sub">Enter your team's shared Bin ID and API key to sync data. This browser will remember them for next time — as long as you keep reopening this exact file.</p>
+    <form id="connectForm">
+      <input type="text" id="connectBinIdInput" name="binid" placeholder="Bin ID" autocomplete="off">
+      <input type="text" id="connectApiKeyInput" name="apikey" placeholder="API Key (X-Master-Key)" autocomplete="off">
+      <button type="submit" class="btn btn-primary">Connect</button>
+    </form>
+    <p class="login-note" id="connectNote"></p>
+    <button type="button" class="link-btn" id="connectSkipBtn" style="margin-top:6px;">Continue without Cloud Sync</button>
+    <p class="login-caveat">Saved to this browser's local storage, tied to this exact file location — a freshly re-downloaded copy with a different filename starts blank.</p>
+  </div>
+</div>
+
+<div class="login-overlay" id="loginGate">
+  <div class="login-card">
+    <p class="eyebrow">Field QA — Punch List</p>
+    <h2>Rework Tracker</h2>
+    <p class="sub" id="loginSub">Enter your work email to continue. Access is limited to approved emails for this project.</p>
+    <input type="email" id="loginEmailInput" placeholder="you@company.com" autocomplete="email">
+    <button class="btn btn-primary" id="loginBtn">Continue</button>
+    <p class="login-note" id="loginNote"></p>
+    <p class="login-caveat">This checks your email against a list stored in the same Cloud Sync bin as your data — not real authentication. Anyone with basic technical know-how could bypass it. Don't rely on it for sensitive data.</p>
+  </div>
+</div>
+
+<div class="shell">
+
+  <div class="app-header">
+    <span class="tick-bl"></span><span class="tick-br"></span>
+    <p class="eyebrow">Field QA — Punch List</p>
+    <h1>Rework Tracker</h1>
+    <p>Upload the rework list workbook after each inspection round, then update each item's status as work moves through the field. If you're opening this as a downloaded file, use Export/Import or Cloud Sync below to carry your changes between sessions and teammates — nothing saves automatically once you close the tab.</p>
+    <div class="rule"></div>
+  </div>
+
+  <div class="who-bar" id="whoBar"></div>
+  <div class="access-panel" id="accessPanel" style="display:none;"></div>
+
+  <div id="storageWarning" class="banner warn"></div>
+  <div id="reportNudgeBanner" class="banner nudge">
+    <span id="reportNudgeText"></span>
+    <div class="nudge-actions">
+      <button type="button" class="link-btn" id="reportNudgeSendBtn">Send Report</button>
+      <button type="button" class="link-btn" id="reportNudgeDismissBtn">Remind me later</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="dropzone" id="dropzone">
+      <label class="dropzone-label" for="fileInput">
+        <strong>Drop the rework list workbook here</strong>
+        <span>XLSX, XLS, or CSV — every sheet is read automatically</span>
+        <span class="browse-btn">Choose Files</span>
+        <input type="file" id="fileInput" accept=".xlsx,.xls,.csv" multiple>
+      </label>
+      <div class="filename" id="filenameLabel"></div>
+    </div>
+
+    <div id="fileListWrap"></div>
+
+    <div class="controls-row" id="controlsRow" style="display:none;">
+      <label class="checkbox-field"><input type="checkbox" id="overwriteCheckbox"> Overwrite a snapshot already on this date</label>
+      <button class="btn btn-primary" id="processBtn">Process Files</button>
+    </div>
+
+    <div class="status-line" id="statusLine"></div>
+    <div class="banner error" id="errorBanner"></div>
+    <div class="banner success" id="summaryBanner"></div>
+  </div>
+
+  <div id="dashboardMount">
+    <div class="placeholder">Upload a rework list above to see the status dashboard.</div>
+  </div>
+
+  <div class="card history">
+    <h2>Snapshot History</h2>
+    <div id="historyBody"></div>
+    <button class="clear-link" id="clearAllBtn">Clear all stored snapshots</button>
+  </div>
+
+  <div class="card backup-card">
+    <h2>Backup &amp; Restore</h2>
+    <p class="sub">To keep history when opening this file elsewhere — from a SharePoint document library, a different device, or after the automatic storage is cleared — export everything to a single file, save that file to SharePoint (or anywhere), and import it back in next time.</p>
+    <div class="backup-actions">
+      <button class="btn btn-ghost" id="exportBackupBtn">Export All Data (JSON)</button>
+      <label class="btn btn-ghost" for="importBackupInput" style="cursor:pointer;">Import Data (JSON)</label>
+      <input type="file" id="importBackupInput" accept=".json">
+    </div>
+    <div class="banner error" id="backupErrorBanner"></div>
+    <div class="banner success" id="backupSuccessBanner"></div>
+
+    <div class="cloud-section">
+      <h3>Cloud Sync (JSONBin.io)</h3>
+      <p class="sub">Saves the <strong>full data</strong> — every snapshot, item, and change history — to a shared JSONBin.io bin. Sign up free at jsonbin.io, copy your API key from the API Keys page, and paste it below. The first "Save to Cloud" click creates your team's bin and shows its ID; share that key + ID with teammates (or bake them into this file) so everyone reads and writes the same data.</p>
+      <div class="cloud-fields">
+        <div class="field"><label for="jsonbinKeyInput">API Key (X-Master-Key) — starts with $2a$10$</label><input type="text" id="jsonbinKeyInput" placeholder="$2a$10$…"></div>
+        <div class="field"><label for="jsonbinBinIdInput">Bin ID (blank the first time) — short hex string</label><input type="text" id="jsonbinBinIdInput" placeholder="auto-filled after first save"></div>
+      </div>
+      <div class="backup-actions">
+        <button class="btn btn-ghost" id="cloudSaveBtn">Save to Cloud</button>
+        <button class="btn btn-ghost" id="cloudLoadBtn">Load from Cloud</button>
+        <button class="btn btn-ghost" id="cloudSwapBtn" title="Swap these two fields if they ended up in the wrong boxes">Swap Values</button>
+      </div>
+      <div class="cloud-result" id="cloudResult"></div>
+    </div>
+  </div>
+
+  <div class="card backup-card">
+    <h2>Status Report</h2>
+    <p class="sub">Generates a short summary of the latest snapshot — overall and per-category completion, top open issues — and opens it as a pre-filled email. You review and hit send in your own email client; nothing goes out without you. Set recipients once and how often you'd like a nudge to send one.</p>
+    <div class="cloud-fields">
+      <div class="field"><label for="reportRecipientsInput">Recipients</label><input type="text" id="reportRecipientsInput" placeholder="name@company.com, name2@company.com"></div>
+      <div class="field"><label for="reportCadenceInput">Remind me every (days)</label><input type="number" id="reportCadenceInput" min="1" value="7"></div>
+    </div>
+    <div class="backup-actions">
+      <button class="btn btn-ghost" id="sendReportBtn">Send Report Now</button>
+    </div>
+    <div class="banner error" id="reportErrorBanner"></div>
+  </div>
+
+</div>
+
+<script>
+(function(){
+  'use strict';
+
+  // ---------- storage abstraction ----------
+  // Three tiers, tried in order:
+  //  1. window.storage — works when this tool is viewed as a live
+  //     Claude.ai artifact. Not available from a downloaded file.
+  //  2. localStorage — a plain, long-standing browser feature that DOES
+  //     work on a standalone downloaded .html file. (It's deliberately
+  //     NOT used when window.storage is present, since localStorage is
+  //     unreliable/blocked inside Claude.ai's sandboxed artifact iframe —
+  //     this fallback only ever runs in the situation where that
+  //     restriction doesn't apply.) Scoped per exact file:// location —
+  //     a freshly re-downloaded copy with a different filename starts
+  //     with nothing saved.
+  //  3. In-memory — last resort, works nowhere persistently, just
+  //     prevents the page from breaking.
+  var storageAvailable = !!(window.storage && window.storage.get && window.storage.set && window.storage.list);
+  var localStorageAvailable = false;
+  try {
+    var __lsTestKey = '__rework_tracker_probe__';
+    localStorage.setItem(__lsTestKey, '1');
+    localStorage.removeItem(__lsTestKey);
+    localStorageAvailable = true;
+  } catch(e){ localStorageAvailable = false; }
+  var LS_PREFIX = 'reworktracker:';
+  var memoryStore = {};
+
+  if (!storageAvailable){
+    var w = document.getElementById('storageWarning');
+    if (localStorageAvailable){
+      w.innerHTML = 'Saving to this browser\u2019s local storage — your data, login, and Cloud Sync settings will still be here next time, ' +
+        '<strong>as long as you keep reopening this exact file</strong> (a freshly re-downloaded copy with a different filename starts blank). ' +
+        'Still use "Export All Data" or "Save to Cloud" to share with teammates or move to another device.';
+    } else {
+      w.innerHTML = 'Nothing saves automatically here — this browser won\u2019t let this page use any storage at all. ' +
+        '<strong>Before closing this tab, use "Export All Data (JSON)" or "Save to Cloud" below</strong> so your changes aren\u2019t lost. ' +
+        'Next time, use "Import Data (JSON)" or "Load from Cloud" to pick up where you left off.';
+    }
+    w.classList.add('show');
+  }
+
+  async function storeGet(key, shared){
+    if (storageAvailable){ try { return await window.storage.get(key, !!shared); } catch(e){ return null; } }
+    if (localStorageAvailable){
+      try {
+        var raw = localStorage.getItem(LS_PREFIX + key);
+        return raw !== null ? { key: key, value: raw } : null;
+      } catch(e){ /* fall through */ }
+    }
+    return memoryStore.hasOwnProperty(key) ? { key: key, value: memoryStore[key] } : null;
+  }
+  async function storeSet(key, val, shared){
+    if (storageAvailable){ try { return await window.storage.set(key, val, !!shared); } catch(e){ return null; } }
+    if (localStorageAvailable){
+      try { localStorage.setItem(LS_PREFIX + key, val); return { key: key, value: val }; }
+      catch(e){ /* e.g. quota exceeded — fall through */ }
+    }
+    memoryStore[key] = val; return { key: key, value: val };
+  }
+  async function storeList(prefix, shared){
+    if (storageAvailable){ try { return await window.storage.list(prefix, !!shared); } catch(e){ return { keys: [] }; } }
+    if (localStorageAvailable){
+      try {
+        var keys = [];
+        for (var i = 0; i < localStorage.length; i++){
+          var k = localStorage.key(i);
+          if (k && k.indexOf(LS_PREFIX + prefix) === 0) keys.push(k.slice(LS_PREFIX.length));
+        }
+        return { keys: keys };
+      } catch(e){ /* fall through */ }
+    }
+    return { keys: Object.keys(memoryStore).filter(function(k){ return k.indexOf(prefix) === 0; }) };
+  }
+  async function storeDelete(key, shared){
+    if (storageAvailable){ try { return await window.storage.delete(key, !!shared); } catch(e){ return null; } }
+    if (localStorageAvailable){
+      try { localStorage.removeItem(LS_PREFIX + key); return { key: key, deleted: true }; }
+      catch(e){ /* fall through */ }
+    }
+    delete memoryStore[key]; return { key: key, deleted: true };
+  }
+  // Snapshot data (the "rework:" keys) is stored SHARED — every team
+  // member who opens this tool sees and edits the same data, which is
+  // what makes "who changed what" meaningful. Only the "your name" field
+  // below is personal to each browser.
+  function storeGetShared(key){ return storeGet(key, true); }
+  function storeSetShared(key, val){ return storeSet(key, val, true); }
+  function storeListShared(prefix){ return storeList(prefix, true); }
+  function storeDeleteShared(key){ return storeDelete(key, true); }
+
+  // ---------- JSONBin.io client (shared by the access gate and Cloud Sync UI) ----------
+  // Fill these in and every downloaded copy of this file will have Cloud
+  // Sync (and the access gate, which depends on it) working out of the
+  // box, with no per-person setup. Leave blank and each person pastes
+  // their own key/Bin ID into the Cloud Sync section further down.
+  var DEFAULT_JSONBIN_KEY = '';
+  var DEFAULT_JSONBIN_BINID = '';
+  var JSONBIN_BASE = 'https://api.jsonbin.io/v3/b';
+
+  async function getJsonbinCredentials(){
+    var k = await storeGet('cloud:jsonbin_key');
+    var b = await storeGet('cloud:jsonbin_binid');
+    return {
+      apiKey: (k && k.value) ? k.value : DEFAULT_JSONBIN_KEY,
+      binId: (b && b.value) ? b.value : DEFAULT_JSONBIN_BINID
+    };
+  }
+
+  async function jsonbinRequest(method, url, apiKey, body){
+    var res = await fetch(url, {
+      method: method,
+      headers: Object.assign({ 'X-Master-Key': apiKey }, body ? { 'Content-Type': 'application/json' } : {}),
+      body: body ? JSON.stringify(body) : undefined
+    });
+    var data = null;
+    try { data = await res.json(); } catch(e){ /* non-JSON response */ }
+    if (!res.ok){
+      throw new Error((data && data.message) ? data.message : ('HTTP ' + res.status));
+    }
+    return data;
+  }
+
+  async function fetchCloudRecord(apiKey, binId){
+    if (!apiKey || !binId) return null;
+    var data = await jsonbinRequest('GET', JSONBIN_BASE + '/' + binId + '/latest', apiKey, null);
+    return (data && data.record) ? data.record : null;
+  }
+
+  async function loadApprovedEmails(){
+    var creds = await getJsonbinCredentials();
+    if (!creds.apiKey || !creds.binId) return [];
+    try {
+      var record = await fetchCloudRecord(creds.apiKey, creds.binId);
+      return (record && Array.isArray(record.approvedEmails)) ? record.approvedEmails : [];
+    } catch(e){
+      console.log('Could not load approved emails from Cloud Sync:', e);
+      return [];
+    }
+  }
+
+  async function saveApprovedEmails(list){
+    var creds = await getJsonbinCredentials();
+    if (!creds.apiKey || !creds.binId) throw new Error('Cloud Sync isn\u2019t configured yet — set an API key and Bin ID below first.');
+    var existing = await fetchCloudRecord(creds.apiKey, creds.binId).catch(function(){ return null; });
+    var payload = existing || { exportedFrom: 'Rework Tracker', exportedAt: new Date().toISOString(), snapshots: [] };
+    payload.approvedEmails = list;
+    await jsonbinRequest('PUT', JSONBIN_BASE + '/' + creds.binId, creds.apiKey, payload);
+  }
+
+  // ---------- DOM refs ----------
+  var dropzone = document.getElementById('dropzone');
+  var fileInput = document.getElementById('fileInput');
+  var filenameLabel = document.getElementById('filenameLabel');
+  var fileListWrap = document.getElementById('fileListWrap');
+  var controlsRow = document.getElementById('controlsRow');
+  var processBtn = document.getElementById('processBtn');
+  var overwriteCheckbox = document.getElementById('overwriteCheckbox');
+  var statusLine = document.getElementById('statusLine');
+  var errorBanner = document.getElementById('errorBanner');
+  var summaryBanner = document.getElementById('summaryBanner');
+  var historyBody = document.getElementById('historyBody');
+  var dashboardMount = document.getElementById('dashboardMount');
+  var clearAllBtn = document.getElementById('clearAllBtn');
+  var loginGate = document.getElementById('loginGate');
+  var loginEmailInput = document.getElementById('loginEmailInput');
+  var loginBtn = document.getElementById('loginBtn');
+  var loginNote = document.getElementById('loginNote');
+  var loginSub = document.getElementById('loginSub');
+  var whoBar = document.getElementById('whoBar');
+  var accessPanel = document.getElementById('accessPanel');
+  var connectGate = document.getElementById('connectGate');
+  var connectForm = document.getElementById('connectForm');
+  var connectBinIdInput = document.getElementById('connectBinIdInput');
+  var connectApiKeyInput = document.getElementById('connectApiKeyInput');
+  var connectNote = document.getElementById('connectNote');
+  var connectSkipBtn = document.getElementById('connectSkipBtn');
+
+  var selectedFiles = []; // { file, date, status, message }
+  var isProcessing = false;
+
+  function todayISO(){
+    var d = new Date();
+    return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+  }
+
+  // ---------- access gate ----------
+  // NOT real authentication — see the caveat on the login card. It checks
+  // an email against a list stored in the same JSONBin.io bin as the
+  // rework data (see saveApprovedEmails/loadApprovedEmails above), so it
+  // actually persists and is actually shared — unlike the earlier version
+  // of this, which stored the list in window.storage and reset itself
+  // every time anyone opened a downloaded copy of this file. If Cloud
+  // Sync isn't configured (no API key/Bin ID, from defaults or storage),
+  // there's nothing to check against, so the gate steps aside entirely
+  // rather than pretend to restrict anything.
+  var currentLoggedInEmail = null;
+
+  async function attemptLogin(raw, creds){
+    var email = raw.trim().toLowerCase();
+    if (!email || email.indexOf('@') === -1){
+      loginNote.textContent = 'Enter a valid email address.';
+      return;
+    }
+    loginBtn.disabled = true;
+    loginNote.textContent = 'Checking\u2026';
+    try {
+      var approved = await loadApprovedEmails();
+      if (approved.length === 0){
+        approved.push(email);
+        await saveApprovedEmails(approved);
+        grantAccess(email);
+      } else if (approved.indexOf(email) !== -1){
+        grantAccess(email);
+      } else {
+        loginNote.textContent = 'That email isn\u2019t on the approved list yet. Ask a teammate who already has access to add you under \u201cManage access.\u201d';
+      }
+    } catch(err){
+      loginNote.textContent = 'Could not reach Cloud Sync: ' + (err && err.message ? err.message : 'unknown error');
+    } finally {
+      loginBtn.disabled = false;
+    }
+  }
+
+  function grantAccess(email){
+    storeSet('access:my_email', email); // personal — remembers on this device when storage allows it
+    currentLoggedInEmail = email;
+    loginGate.style.display = 'none';
+    loginNote.textContent = '';
+    renderAccountBar();
+  }
+
+  function renderAccountBar(){
+    if (currentLoggedInEmail){
+      whoBar.innerHTML = 'Signed in as <strong>' + escapeHtml(currentLoggedInEmail) + '</strong> \u00b7 ' +
+        '<button class="link-btn" id="manageAccessBtn">Manage access</button> \u00b7 ' +
+        '<button class="link-btn" id="logoutBtn">Log out</button>';
+      document.getElementById('manageAccessBtn').addEventListener('click', toggleAccessPanel);
+      document.getElementById('logoutBtn').addEventListener('click', function(){
+        storeSet('access:my_email', '');
+        currentLoggedInEmail = null;
+        accessPanel.style.display = 'none';
+        loginEmailInput.value = '';
+        loginNote.textContent = '';
+        loginGate.style.display = 'flex';
+      });
+    } else {
+      // Cloud Sync isn't configured, so there's no list to gate against —
+      // fall back to a plain, non-blocking identity field for attribution.
+      whoBar.innerHTML = '<label for="userNameInput">Editing as</label><input type="text" id="userNameInput" placeholder="Your name or email">';
+      var nameInput = document.getElementById('userNameInput');
+      storeGet('profile:name').then(function(r){ if (r && r.value) nameInput.value = r.value; });
+      nameInput.addEventListener('change', function(){ storeSet('profile:name', nameInput.value.trim()); });
+    }
+  }
+
+  async function toggleAccessPanel(){
+    if (accessPanel.style.display === 'block'){ accessPanel.style.display = 'none'; return; }
+    await renderAccessPanel();
+    accessPanel.style.display = 'block';
+  }
+
+  async function renderAccessPanel(){
+    var approved = await loadApprovedEmails();
+    var rows = approved.length
+      ? approved.map(function(e){
+          return '<div class="access-row"><span>' + escapeHtml(e) + '</span><button data-remove-email="' + escapeHtml(e) + '">Remove</button></div>';
+        }).join('')
+      : '<p class="empty-note">No approved emails yet.</p>';
+    accessPanel.innerHTML = '<h4>Approved Emails</h4>' + rows +
+      '<div class="access-add"><input type="email" id="newApprovedEmail" placeholder="teammate@company.com"><button class="btn btn-ghost" id="addApprovedBtn">Add</button></div>' +
+      '<p class="access-caveat">Anyone on this list can sign in and edit shared data. This list lives in your Cloud Sync bin — it\u2019s a courtesy gate, not real security.</p>';
+    accessPanel.querySelectorAll('button[data-remove-email]').forEach(function(btn){
+      btn.addEventListener('click', async function(){
+        var email = btn.getAttribute('data-remove-email');
+        var list = (await loadApprovedEmails()).filter(function(e){ return e !== email; });
+        await saveApprovedEmails(list);
+        renderAccessPanel();
+      });
+    });
+    var addBtn = document.getElementById('addApprovedBtn');
+    var addInput = document.getElementById('newApprovedEmail');
+    addBtn.addEventListener('click', async function(){
+      var email = addInput.value.trim().toLowerCase();
+      if (!email || email.indexOf('@') === -1) return;
+      var list = await loadApprovedEmails();
+      if (list.indexOf(email) === -1){ list.push(email); await saveApprovedEmails(list); }
+      addInput.value = '';
+      renderAccessPanel();
+    });
+    addInput.addEventListener('keydown', function(e){ if (e.key === 'Enter') addBtn.click(); });
+  }
+
+  function currentUserName(){
+    if (currentLoggedInEmail) return currentLoggedInEmail;
+    var nameInput = document.getElementById('userNameInput');
+    return (nameInput && nameInput.value.trim()) || 'Unknown';
+  }
+
+  async function initAccessGate(){
+    var creds = await getJsonbinCredentials();
+    if (!creds.apiKey || !creds.binId){
+      loginGate.style.display = 'none';
+      renderAccountBar();
+      return;
+    }
+    loginBtn.addEventListener('click', function(){ attemptLogin(loginEmailInput.value, creds); });
+    loginEmailInput.addEventListener('keydown', function(e){ if (e.key === 'Enter') attemptLogin(loginEmailInput.value, creds); });
+
+    var r = await storeGet('access:my_email');
+    var myEmail = r && r.value ? r.value : '';
+    var approved = await loadApprovedEmails();
+    if (myEmail && (approved.length === 0 || approved.indexOf(myEmail) !== -1)){
+      grantAccess(myEmail);
+    } else {
+      if (myEmail && approved.indexOf(myEmail) === -1){
+        loginNote.textContent = 'Your access was removed. Enter an approved email to continue.';
+      }
+      loginGate.style.display = 'flex';
+    }
+  }
+
+  // ---------- Connect gate ----------
+  // Shown before the email gate when no Bin ID / API key is known yet —
+  // there's nothing the email gate could check against otherwise. Built
+  // as a real <form> with type="password" and autocomplete hints
+  // (autocomplete="username" / "current-password") specifically because
+  // those are what browsers key their "save this password?" prompt on;
+  // a couple of plain text inputs with a JS click handler generally
+  // won't trigger it. preventDefault() stops an actual page navigation
+  // (this is a single-page tool, not a real backend to submit to), but
+  // the submit event itself is still what most modern browsers use to
+  // detect "this looks like a login" and offer to remember it.
+  connectForm.addEventListener('submit', async function(e){
+    e.preventDefault();
+    var binId = connectBinIdInput.value.trim();
+    var apiKey = connectApiKeyInput.value.trim();
+    if (!binId || !apiKey){
+      connectNote.textContent = 'Enter both your Bin ID and API key.';
+      return;
+    }
+    // JSONBin API keys are bcrypt-shaped ($2a$10$...); Bin IDs are short
+    // hex strings. If they look swapped, just fix it rather than saving
+    // the mistake and making someone debug it later.
+    var apiKeyLooksLikeBin = /^[a-f0-9]{20,}$/i.test(apiKey) && !/^\$2[ab]\$/.test(apiKey);
+    var binIdLooksLikeKey = /^\$2[ab]\$/.test(binId);
+    var corrected = false;
+    if (apiKeyLooksLikeBin || binIdLooksLikeKey){
+      var tmp = apiKey; apiKey = binId; binId = tmp;
+      connectNote.textContent = 'These looked swapped, so I corrected the order automatically.';
+      corrected = true;
+    }
+    await storeSet('cloud:jsonbin_binid', binId);
+    await storeSet('cloud:jsonbin_key', apiKey);
+    if (corrected){
+      await new Promise(function(resolve){ setTimeout(resolve, 1400); });
+    }
+    connectGate.style.display = 'none';
+    await initAccessGate();
+  });
+  connectSkipBtn.addEventListener('click', function(){
+    connectGate.style.display = 'none';
+    initAccessGate(); // steps aside on its own since credentials are still empty
+  });
+
+  async function initGates(){
+    var creds = await getJsonbinCredentials();
+    if (!creds.apiKey || !creds.binId){
+      connectGate.style.display = 'flex';
+    } else {
+      await initAccessGate();
+    }
+  }
+
+  // ---------- dropzone / file selection ----------
+  // Page-level guard: a drop that lands a few px outside the dropzone
+  // would otherwise make the browser navigate away and display the raw
+  // file, which looks exactly like "nothing happened."
+  window.addEventListener('dragover', function(e){ e.preventDefault(); });
+  window.addEventListener('drop', function(e){ e.preventDefault(); });
+
+  ['dragenter','dragover'].forEach(function(evt){
+    dropzone.addEventListener(evt, function(e){ e.preventDefault(); e.stopPropagation(); dropzone.classList.add('drag'); });
+  });
+  ['dragleave','drop'].forEach(function(evt){
+    dropzone.addEventListener(evt, function(e){ e.preventDefault(); e.stopPropagation(); dropzone.classList.remove('drag'); });
+  });
+  dropzone.addEventListener('drop', function(e){
+    if (isProcessing) return;
+    if (e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files.length) addFiles(e.dataTransfer.files);
+  });
+  // Click-to-browse is handled natively by the <label for="fileInput">
+  // wrapping the dropzone — no JS-triggered .click() needed.
+  fileInput.addEventListener('change', function(){
+    if (isProcessing) return;
+    if (fileInput.files && fileInput.files.length) addFiles(fileInput.files);
+    fileInput.value = '';
+  });
+
+  function guessDateFromFilename(name){
+    var m = name.match(/(20\d{2})[-_.]?(0[1-9]|1[0-2])[-_.]?(0[1-9]|[12]\d|3[01])/);
+    if (m) return m[1] + '-' + m[2] + '-' + m[3];
+    return todayISO();
+  }
+
+  function escapeHtml(s){
+    return String(s).replace(/[&<>"']/g, function(c){
+      return { '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c];
+    });
+  }
+
+  function addFiles(fileList){
+    Array.prototype.forEach.call(fileList, function(f){
+      selectedFiles.push({
+        file: f,
+        date: guessDateFromFilename(f.name),
+        status: 'idle',
+        message: ''
+      });
+    });
+    filenameLabel.textContent = selectedFiles.length + ' file' + (selectedFiles.length === 1 ? '' : 's') + ' selected — review below';
+    renderFileList();
+  }
+
+  function renderFileList(){
+    if (!selectedFiles.length){
+      fileListWrap.innerHTML = '';
+      controlsRow.style.display = 'none';
+      filenameLabel.textContent = '';
+      return;
+    }
+    controlsRow.style.display = 'flex';
+    var rows = selectedFiles.map(function(entry, i){
+      return '<tr data-idx="' + i + '">' +
+        '<td class="fname">' + escapeHtml(entry.file.name) + '</td>' +
+        '<td><input type="date" value="' + entry.date + '" data-field="date" data-idx="' + i + '"></td>' +
+        '<td class="status-cell">' + statusCellHtml(entry) + '</td>' +
+        '<td><button class="remove" data-remove="' + i + '" title="Remove">&times;</button></td>' +
+        '</tr>';
+    }).join('');
+    fileListWrap.innerHTML = '<table class="filetable"><thead><tr><th>File</th><th>Snapshot Date</th><th>Status</th><th></th></tr></thead><tbody>' + rows + '</tbody></table>';
+
+    fileListWrap.querySelectorAll('input[data-field]').forEach(function(inp){
+      inp.addEventListener('change', function(){
+        var idx = parseInt(inp.getAttribute('data-idx'), 10);
+        selectedFiles[idx][inp.getAttribute('data-field')] = inp.value;
+      });
+    });
+    fileListWrap.querySelectorAll('button[data-remove]').forEach(function(btn){
+      btn.addEventListener('click', function(){
+        if (isProcessing) return;
+        var idx = parseInt(btn.getAttribute('data-remove'), 10);
+        selectedFiles.splice(idx, 1);
+        renderFileList();
+      });
+    });
+  }
+
+  function statusCellHtml(entry){
+    if (entry.status === 'parsing') return '<span class="spinner"></span><span>Working…</span>';
+    if (entry.status === 'saved') return '<span class="badge ok">Saved</span><span class="row-msg">' + escapeHtml(entry.message) + '</span>';
+    if (entry.status === 'skip') return '<span class="badge skip">Skipped</span><span class="row-msg">' + escapeHtml(entry.message) + '</span>';
+    if (entry.status === 'error') return '<span class="badge err">Error</span><span class="row-msg">' + escapeHtml(entry.message) + '</span>';
+    return '<span class="badge pending">Pending</span>';
+  }
+  function updateRowStatus(entry){
+    var idx = selectedFiles.indexOf(entry);
+    if (idx === -1) return;
+    var cell = fileListWrap.querySelector('tr[data-idx="' + idx + '"] .status-cell');
+    if (cell) cell.innerHTML = statusCellHtml(entry);
+  }
+
+  function setStatus(text){
+    statusLine.innerHTML = text ? '<span class="spinner"></span><span>' + text + '</span>' : '';
+  }
+  function showError(msg){ errorBanner.textContent = msg; errorBanner.classList.add('show'); }
+  function clearError(){ errorBanner.textContent = ''; errorBanner.classList.remove('show'); summaryBanner.classList.remove('show'); }
+
+  // ---------- category name formatting ----------
+  function formatCategoryName(name){
+    var t = name.trim();
+    var lettersOnly = t.replace(/[^A-Za-z]/g, '');
+    var isAllUpper = t === t.toUpperCase() && lettersOnly.length > 0;
+    var isAllLower = t === t.toLowerCase();
+    if ((isAllUpper && lettersOnly.length > 4) || isAllLower){
+      return t.split(/\s+/).map(function(w){ return w.charAt(0).toUpperCase() + w.slice(1).toLowerCase(); }).join(' ');
+    }
+    return t; // already mixed case, or a short acronym like "BHA" — leave as-is
+  }
+
+  // ---------- status model ----------
+  // The source workbook only has a binary 0/1 (Pending / Rework Done). On
+  // import that maps to the two ends of a 3-stage field workflow: item not
+  // yet reworked (awaiting_construction) or reworked and signed off
+  // (pass). "awaiting_quality" — reworked on site but not yet re-inspected
+  // — doesn't exist in the source data; it's only reachable by a team
+  // member editing status in this tool, matching the "Table Incomplete at
+  // the time of ITC" style problem text already in the sheets.
+  var STATUS_STAGES = [
+    { value: 'awaiting_construction', label: 'Awaiting Construction' },
+    { value: 'awaiting_quality', label: 'Awaiting Quality' },
+    { value: 'pass', label: 'Pass' }
+  ];
+  function statusLabel(v){
+    var s = STATUS_STAGES.find(function(s){ return s.value === v; });
+    return s ? s.label : v;
+  }
+
+  // ---------- parsing: rework workbook (every sheet, every tab) ----------
+  // Sheets in these exports have a title row, an off-to-the-side Status
+  // legend (0=Pending, 1=Rework Done), then the real header row — which
+  // isn't at a fixed row/column index and varies sheet to sheet. So the
+  // header row is *found* by content (a cell matching "Location" and
+  // another matching "Status" in the same row) rather than assumed.
+  async function parseReworkWorkbook(file){
+    if (!window.XLSX) throw new Error('The spreadsheet reading library failed to load. Check your connection and try again.');
+    var buf = await file.arrayBuffer();
+    var wb = XLSX.read(buf, { type: 'array' });
+
+    var categories = [];
+
+    wb.SheetNames.forEach(function(sheetName){
+      var aoa = XLSX.utils.sheet_to_json(wb.Sheets[sheetName], { header: 1, defval: null });
+
+      var headerRowIdx = -1;
+      for (var i = 0; i < aoa.length; i++){
+        var row = aoa[i];
+        var hasLocation = row.some(function(c){ return c != null && /^location/i.test(String(c).trim()); });
+        var hasStatus = row.some(function(c){ return c != null && /^status/i.test(String(c).trim()); });
+        if (hasLocation && hasStatus){ headerRowIdx = i; break; }
+      }
+      if (headerRowIdx === -1){
+        categories.push({ name: formatCategoryName(sheetName), items: [] });
+        return;
+      }
+
+      var header = aoa[headerRowIdx];
+      function findCol(re){
+        for (var c = 0; c < header.length; c++){
+          if (header[c] != null && re.test(String(header[c]).trim())) return c;
+        }
+        return -1;
+      }
+      var snoCol = findCol(/^s\.?\s*no\.?$/i);
+      var combinedCol = findCol(/pile.*(location|rail)|(location|rail).*pile/i);
+      var locationCol = findCol(/^location/i);
+      var pileCol = combinedCol === -1 ? findCol(/^pile$/i) : -1;
+      var problemCol = findCol(/^problem/i);
+      var statusCol = findCol(/^status/i);
+
+      var items = [];
+      for (var r = headerRowIdx + 1; r < aoa.length; r++){
+        var row = aoa[r];
+        if (!row) continue;
+        var location = locationCol >= 0 ? row[locationCol] : null;
+        var problem = problemCol >= 0 ? row[problemCol] : null;
+        if (location == null && problem == null) continue;
+        var pileVal = combinedCol >= 0 ? row[combinedCol] : (pileCol >= 0 ? row[pileCol] : null);
+        var statusRaw = statusCol >= 0 ? row[statusCol] : null;
+        var status = (statusRaw === 1 || statusRaw === '1') ? 'pass' : 'awaiting_construction';
+        items.push({
+          sno: snoCol >= 0 && row[snoCol] != null ? row[snoCol] : null,
+          location: location != null ? String(location).trim() : '',
+          pile: pileVal != null ? String(pileVal).trim() : '',
+          problem: problem != null ? String(problem).trim() : '(unspecified)',
+          status: status,
+          history: []
+        });
+      }
+      categories.push({ name: formatCategoryName(sheetName), items: items });
+    });
+
+    recomputeTotals({ categories: categories });
+    var grandTotal = 0, grandPass = 0;
+    categories.forEach(function(c){ grandTotal += c.total; grandPass += c.pass; });
+    return { categories: categories, grandTotal: grandTotal, grandPass: grandPass };
+  }
+
+  // Mutates a { categories: [...] } record in place, filling in per-category
+  // and grand totals from each item's current status. Called after import
+  // and after every manual status edit.
+  function recomputeTotals(record){
+    var grandTotal = 0, grandPass = 0, grandAwaitingQuality = 0, grandAwaitingConstruction = 0;
+    record.categories.forEach(function(c){
+      c.total = c.items.length;
+      c.pass = c.items.filter(function(it){ return it.status === 'pass'; }).length;
+      c.awaitingQuality = c.items.filter(function(it){ return it.status === 'awaiting_quality'; }).length;
+      c.awaitingConstruction = c.items.filter(function(it){ return it.status === 'awaiting_construction'; }).length;
+      grandTotal += c.total; grandPass += c.pass;
+      grandAwaitingQuality += c.awaitingQuality; grandAwaitingConstruction += c.awaitingConstruction;
+    });
+    record.grandTotal = grandTotal;
+    record.grandPass = grandPass;
+    record.grandAwaitingQuality = grandAwaitingQuality;
+    record.grandAwaitingConstruction = grandAwaitingConstruction;
+    record.grandOpen = grandTotal - grandPass;
+    return record;
+  }
+
+  // ---------- per-file processing ----------
+  async function processEntry(entry, overwrite){
+    entry.status = 'parsing'; entry.message = '';
+    updateRowStatus(entry);
+    try {
+      if (!entry.date) throw new Error('Set a snapshot date before processing.');
+      var parsed = await parseReworkWorkbook(entry.file);
+      if (parsed.grandTotal === 0){
+        throw new Error('No Location/Status rows found — check the sheet headers match "Location" and "Status".');
+      }
+
+      var key = 'rework:' + entry.date;
+      var existing = await storeGetShared(key);
+      if (existing && existing.value && !overwrite){
+        entry.status = 'skip';
+        entry.message = 'A snapshot for this date already exists';
+        updateRowStatus(entry);
+        return { skipped: true };
+      }
+
+      var record = recomputeTotals({
+        date: entry.date,
+        source: entry.file.name,
+        categories: parsed.categories,
+        uploadedAt: new Date().toISOString()
+      });
+      var saveRes = await storeSetShared(key, JSON.stringify(record));
+      if (!saveRes) throw new Error('Could not save this snapshot.');
+
+      entry.status = 'saved';
+      entry.message = parsed.grandPass + '/' + parsed.grandTotal + ' passed';
+      updateRowStatus(entry);
+      return { ok: true, date: entry.date };
+    } catch(err){
+      entry.status = 'error';
+      entry.message = err && err.message ? err.message : String(err);
+      updateRowStatus(entry);
+      return { error: true };
+    }
+  }
+
+  processBtn.addEventListener('click', async function(){
+    if (!selectedFiles.length) return;
+    clearError();
+    processBtn.disabled = true;
+    isProcessing = true;
+    var overwrite = overwriteCheckbox.checked;
+    var saved = 0, skipped = 0, failed = 0, lastDate = null;
+    for (var i = 0; i < selectedFiles.length; i++){
+      setStatus('Processing ' + (i + 1) + ' of ' + selectedFiles.length + '…');
+      var res = await processEntry(selectedFiles[i], overwrite);
+      if (res.ok){ saved++; lastDate = res.date; }
+      else if (res.skipped) skipped++;
+      else failed++;
+    }
+    setStatus('');
+    await refreshHistory();
+    if (lastDate) await renderDashboard(lastDate);
+    summaryBanner.textContent = saved + ' snapshot' + (saved === 1 ? '' : 's') + ' saved' +
+      (skipped ? ', ' + skipped + ' skipped' : '') +
+      (failed ? ', ' + failed + ' failed — see the table above' : '') + '.';
+    summaryBanner.classList.add('show');
+    processBtn.disabled = false;
+    isProcessing = false;
+  });
+
+  // ---------- history ----------
+  async function loadAllSnapshots(){
+    var listRes = await storeListShared('rework:');
+    var keys = listRes ? listRes.keys : [];
+    var records = [];
+    for (var i = 0; i < keys.length; i++){
+      var r = await storeGetShared(keys[i]);
+      if (r && r.value){ try { records.push(JSON.parse(r.value)); } catch(e){} }
+    }
+    records.sort(function(a, b){ return a.date.localeCompare(b.date); });
+    return records;
+  }
+
+  async function refreshHistory(){
+    var records = await loadAllSnapshots();
+    if (!records.length){
+      historyBody.innerHTML = '<p class="empty-note">No snapshots yet — upload your first rework list above.</p>';
+      return;
+    }
+    var rowsHtml = records.slice().reverse().map(function(r){
+      var pct = r.grandTotal ? Math.round(r.grandPass / r.grandTotal * 100) : 0;
+      return '<tr class="row" data-date="' + r.date + '">' +
+        '<td>' + r.date + '</td>' +
+        '<td>' + r.grandTotal + '</td>' +
+        '<td>' + pct + '%</td>' +
+        '<td>' + r.grandOpen + '</td>' +
+        '<td class="actions"><button data-del="' + r.date + '">Delete</button></td>' +
+        '</tr>';
+    }).join('');
+    historyBody.innerHTML = '<table class="hist"><thead><tr><th>Date</th><th>Total Items</th><th>Pass</th><th>Open</th><th></th></tr></thead><tbody>' + rowsHtml + '</tbody></table>';
+
+    historyBody.querySelectorAll('tr.row').forEach(function(tr){
+      tr.addEventListener('click', function(e){
+        if (e.target.tagName === 'BUTTON') return;
+        renderDashboard(tr.getAttribute('data-date'));
+      });
+    });
+    historyBody.querySelectorAll('button[data-del]').forEach(function(btn){
+      btn.addEventListener('click', async function(e){
+        e.stopPropagation();
+        var date = btn.getAttribute('data-del');
+        if (!confirm('Delete the snapshot for ' + date + '? This cannot be undone.')) return;
+        await storeDeleteShared('rework:' + date);
+        await refreshHistory();
+        dashboardMount.innerHTML = '<div class="placeholder">Upload a rework list above to see the status dashboard.</div>';
+      });
+    });
+  }
+
+  clearAllBtn.addEventListener('click', async function(){
+    if (!confirm('Clear ALL stored snapshots? This cannot be undone.')) return;
+    var listRes = await storeListShared('rework:');
+    var keys = listRes ? listRes.keys : [];
+    for (var i = 0; i < keys.length; i++) await storeDeleteShared(keys[i]);
+    await refreshHistory();
+    dashboardMount.innerHTML = '<div class="placeholder">Upload a rework list above to see the status dashboard.</div>';
+  });
+
+  // ---------- backup / restore (for SharePoint or any storage outside this tool's own) ----------
+  var exportBackupBtn = document.getElementById('exportBackupBtn');
+  var importBackupInput = document.getElementById('importBackupInput');
+  var backupErrorBanner = document.getElementById('backupErrorBanner');
+  var backupSuccessBanner = document.getElementById('backupSuccessBanner');
+
+  function showBackupError(msg){
+    backupSuccessBanner.classList.remove('show');
+    backupErrorBanner.textContent = msg;
+    backupErrorBanner.classList.add('show');
+  }
+  function showBackupSuccess(msg){
+    backupErrorBanner.classList.remove('show');
+    backupSuccessBanner.textContent = msg;
+    backupSuccessBanner.classList.add('show');
+  }
+
+  exportBackupBtn.addEventListener('click', async function(){
+    try {
+      var payload = await buildBackupPayload();
+      var blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+      var url = URL.createObjectURL(blob);
+      var a = document.createElement('a');
+      a.href = url;
+      a.download = 'Rework_Tracker_Backup_' + todayISO() + '.json';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      setTimeout(function(){ URL.revokeObjectURL(url); }, 1000);
+      showBackupSuccess('Exported ' + payload.snapshots.length + ' snapshot' + (payload.snapshots.length === 1 ? '' : 's') + '. Save this file to SharePoint (or anywhere) to restore later.');
+    } catch(err){
+      showBackupError('Could not export data: ' + (err && err.message ? err.message : 'unknown error'));
+    }
+  });
+
+  async function buildBackupPayload(){
+    var snapshots = await loadAllSnapshots();
+    return { exportedFrom: 'Rework Tracker', exportedAt: new Date().toISOString(), snapshots: snapshots };
+  }
+
+  async function applyImportedSnapshots(snapshots){
+    for (var i = 0; i < snapshots.length; i++){
+      var snap = snapshots[i];
+      if (snap && snap.date){
+        await storeSetShared('rework:' + snap.date, JSON.stringify(recomputeTotals(snap)));
+      }
+    }
+    await refreshHistory();
+    var restored = await loadAllSnapshots();
+    if (restored.length) await renderDashboard(restored[restored.length - 1].date);
+  }
+
+  importBackupInput.addEventListener('change', async function(){
+    var file = importBackupInput.files && importBackupInput.files[0];
+    importBackupInput.value = '';
+    if (!file) return;
+    try {
+      var text = await file.text();
+      var payload = JSON.parse(text);
+      if (!payload || !Array.isArray(payload.snapshots)){
+        throw new Error('This file doesn\u2019t look like a Rework Tracker backup (no snapshots array found).');
+      }
+      var existing = await loadAllSnapshots();
+      var msg = 'Import ' + payload.snapshots.length + ' snapshot' + (payload.snapshots.length === 1 ? '' : 's') +
+        (existing.length ? ' — this will overwrite any dates that already exist' : '') + '. Continue?';
+      if (!confirm(msg)) return;
+
+      await applyImportedSnapshots(payload.snapshots);
+      showBackupSuccess('Restored ' + payload.snapshots.length + ' snapshot' + (payload.snapshots.length === 1 ? '' : 's') + '.');
+    } catch(err){
+      showBackupError('Could not import this file: ' + (err && err.message ? err.message : 'unknown error'));
+    }
+  });
+
+  // ---------- Cloud Sync (JSONBin.io) UI ----------
+  // A free third-party JSON storage service, called directly from this
+  // page's own JS — no Claude.ai hosting or MCP connector required, so
+  // this works identically whether opened via Claude, downloaded, or
+  // hosted on SharePoint. The API key lives in plain text in this page;
+  // that's inherent to any client-side-only integration, not a bug —
+  // treat it like a shared password, not a secret. (JSONBIN_BASE,
+  // jsonbinRequest, and credential resolution are defined earlier, up
+  // near the storage abstraction, since the access gate needs them too.)
+  var jsonbinKeyInput = document.getElementById('jsonbinKeyInput');
+  var jsonbinBinIdInput = document.getElementById('jsonbinBinIdInput');
+  var cloudSaveBtn = document.getElementById('cloudSaveBtn');
+  var cloudLoadBtn = document.getElementById('cloudLoadBtn');
+  var cloudSwapBtn = document.getElementById('cloudSwapBtn');
+  var cloudResult = document.getElementById('cloudResult');
+
+  function showCloudResult(html){
+    cloudResult.innerHTML = html;
+    cloudResult.classList.add('show');
+  }
+
+  // JSONBin API keys are bcrypt-shaped ($2a$10$... or $2b$10$...); Bin
+  // IDs are short hex strings. Not a hard guarantee, but different
+  // enough to catch the two fields being swapped, which is an easy
+  // mistake with two cryptic-looking strings.
+  function checkCloudFieldFormats(){
+    var key = jsonbinKeyInput.value.trim();
+    var bin = jsonbinBinIdInput.value.trim();
+    if (!key || !bin) return;
+    var keyLooksLikeBin = /^[a-f0-9]{20,}$/i.test(key) && !/^\$2[ab]\$/.test(key);
+    var binLooksLikeKey = /^\$2[ab]\$/.test(bin);
+    if (keyLooksLikeBin || binLooksLikeKey){
+      showCloudResult('<strong>These two fields look swapped</strong> — the API Key should start with <code>$2a$10$</code> or similar, and the Bin ID should be a short hex string. Click "Swap Values" below to fix it.');
+    }
+  }
+
+  // Remember key/bin ID on this browser when storage allows it, so at
+  // least repeat visits on the same device don't need re-entering them.
+  // Falls back to DEFAULT_JSONBIN_KEY/BINID if nothing's stored yet.
+  (async function initCloudFields(){
+    var creds = await getJsonbinCredentials();
+    jsonbinKeyInput.value = creds.apiKey;
+    jsonbinBinIdInput.value = creds.binId;
+    checkCloudFieldFormats();
+  })();
+  jsonbinKeyInput.addEventListener('change', function(){ storeSet('cloud:jsonbin_key', jsonbinKeyInput.value.trim()); checkCloudFieldFormats(); });
+  jsonbinBinIdInput.addEventListener('change', function(){ storeSet('cloud:jsonbin_binid', jsonbinBinIdInput.value.trim()); checkCloudFieldFormats(); });
+  cloudSwapBtn.addEventListener('click', function(){
+    var key = jsonbinKeyInput.value;
+    jsonbinKeyInput.value = jsonbinBinIdInput.value;
+    jsonbinBinIdInput.value = key;
+    storeSet('cloud:jsonbin_key', jsonbinKeyInput.value.trim());
+    storeSet('cloud:jsonbin_binid', jsonbinBinIdInput.value.trim());
+    checkCloudFieldFormats();
+    showCloudResult('Swapped. Values now saved in the corrected order.');
+  });
+
+  cloudSaveBtn.addEventListener('click', async function(){
+    var apiKey = jsonbinKeyInput.value.trim();
+    var binId = jsonbinBinIdInput.value.trim();
+    if (!apiKey){
+      showCloudResult('Paste your JSONBin.io API key above first.');
+      return;
+    }
+    cloudSaveBtn.disabled = true;
+    cloudSaveBtn.textContent = 'Saving…';
+    showCloudResult('Saving to JSONBin.io…');
+    try {
+      var payload = await buildBackupPayload();
+      if (binId){
+        // Preserve the approved-emails list — a plain PUT would otherwise
+        // silently wipe it out, since JSONBin replaces the whole record.
+        try {
+          var existing = await fetchCloudRecord(apiKey, binId);
+          if (existing && Array.isArray(existing.approvedEmails)) payload.approvedEmails = existing.approvedEmails;
+        } catch(e){ /* if this fails, proceed without it rather than blocking the save */ }
+        await jsonbinRequest('PUT', JSONBIN_BASE + '/' + binId, apiKey, payload);
+        showCloudResult('Saved ' + payload.snapshots.length + ' snapshot' + (payload.snapshots.length === 1 ? '' : 's') + ' to bin <strong>' + escapeHtml(binId) + '</strong>.');
+      } else {
+        var res = await fetch(JSONBIN_BASE, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'X-Master-Key': apiKey, 'X-Bin-Name': 'Rework Tracker Data' },
+          body: JSON.stringify(payload)
+        });
+        var data = null;
+        try { data = await res.json(); } catch(e){}
+        if (!res.ok || !data || !data.metadata || !data.metadata.id){
+          throw new Error((data && data.message) ? data.message : ('HTTP ' + res.status + ' — could not create bin'));
+        }
+        var newBinId = data.metadata.id;
+        jsonbinBinIdInput.value = newBinId;
+        storeSet('cloud:jsonbin_binid', newBinId);
+        showCloudResult('Created a new shared bin and saved ' + payload.snapshots.length + ' snapshot' + (payload.snapshots.length === 1 ? '' : 's') + '.<br><br>' +
+          '<strong>Bin ID: ' + escapeHtml(newBinId) + '</strong><br>' +
+          'Share this Bin ID and your API key with your team so everyone points at the same data — or tell me both and I\u2019ll bake them into the file before you redistribute it.');
+      }
+    } catch(err){
+      showCloudResult('<strong>Save failed:</strong> ' + escapeHtml(err && err.message ? err.message : String(err)));
+    } finally {
+      cloudSaveBtn.disabled = false;
+      cloudSaveBtn.textContent = 'Save to Cloud';
+    }
+  });
+
+  cloudLoadBtn.addEventListener('click', async function(){
+    var apiKey = jsonbinKeyInput.value.trim();
+    var binId = jsonbinBinIdInput.value.trim();
+    if (!apiKey || !binId){
+      showCloudResult('Need both an API key and a Bin ID to load — save once first if you don\u2019t have a Bin ID yet.');
+      return;
+    }
+    cloudLoadBtn.disabled = true;
+    cloudLoadBtn.textContent = 'Loading…';
+    showCloudResult('Loading from JSONBin.io…');
+    try {
+      var data = await jsonbinRequest('GET', JSONBIN_BASE + '/' + binId + '/latest', apiKey, null);
+      var payload = data && data.record;
+      if (!payload || !Array.isArray(payload.snapshots)){
+        throw new Error('This bin doesn\u2019t look like Rework Tracker data (no snapshots array found).');
+      }
+      var existing = await loadAllSnapshots();
+      var msg = 'Load ' + payload.snapshots.length + ' snapshot' + (payload.snapshots.length === 1 ? '' : 's') + ' from the cloud' +
+        (existing.length ? ' — this will overwrite any dates that already exist locally' : '') + '. Continue?';
+      if (!confirm(msg)) return;
+
+      await applyImportedSnapshots(payload.snapshots);
+      showCloudResult('Loaded ' + payload.snapshots.length + ' snapshot' + (payload.snapshots.length === 1 ? '' : 's') + ' from the cloud.');
+    } catch(err){
+      showCloudResult('<strong>Load failed:</strong> ' + escapeHtml(err && err.message ? err.message : String(err)));
+    } finally {
+      cloudLoadBtn.disabled = false;
+      cloudLoadBtn.textContent = 'Load from Cloud';
+    }
+  });
+
+  // ---------- Status Report ----------
+  // No real backend, so no true scheduling — nothing here can run while
+  // the tool is closed. "Send Report Now" builds a summary and hands it
+  // to the user's own email client via a mailto: link (they still click
+  // send themselves, nothing goes out silently). The nudge banner is the
+  // closest approximation of automatic: it checks, purely on page load,
+  // how long it's been since the last report and prompts if it's overdue
+  // — but if nobody opens the tool, no nudge and no report happens.
+  var REPORT_LAST_SENT_KEY = 'report:last_sent_at';
+  var REPORT_CADENCE_KEY = 'report:cadence_days';
+  var REPORT_RECIPIENTS_KEY = 'report:recipients';
+
+  var reportRecipientsInput = document.getElementById('reportRecipientsInput');
+  var reportCadenceInput = document.getElementById('reportCadenceInput');
+  var sendReportBtn = document.getElementById('sendReportBtn');
+  var reportErrorBanner = document.getElementById('reportErrorBanner');
+  var reportNudgeBanner = document.getElementById('reportNudgeBanner');
+  var reportNudgeText = document.getElementById('reportNudgeText');
+  var reportNudgeSendBtn = document.getElementById('reportNudgeSendBtn');
+  var reportNudgeDismissBtn = document.getElementById('reportNudgeDismissBtn');
+
+  (async function initReportFields(){
+    var r = await storeGet(REPORT_RECIPIENTS_KEY);
+    var c = await storeGet(REPORT_CADENCE_KEY);
+    if (r && r.value) reportRecipientsInput.value = r.value;
+    if (c && c.value) reportCadenceInput.value = c.value;
+  })();
+  reportRecipientsInput.addEventListener('change', function(){ storeSet(REPORT_RECIPIENTS_KEY, reportRecipientsInput.value.trim()); });
+  reportCadenceInput.addEventListener('change', function(){ storeSet(REPORT_CADENCE_KEY, reportCadenceInput.value.trim()); });
+
+  function buildReportEmailContent(record, priorRecord){
+    var pct = record.grandTotal ? Math.round(record.grandPass / record.grandTotal * 100) : 0;
+    var subject = 'Rework Tracker Update — ' + record.date + ' — ' + pct + '% Complete';
+    var lines = [];
+    lines.push('Rework Status Update — ' + record.date);
+    lines.push('');
+    lines.push('Overall: ' + record.grandPass + '/' + record.grandTotal + ' items complete (' + pct + '%)');
+    if (priorRecord){
+      var deltaOpen = record.grandOpen - priorRecord.grandOpen;
+      if (deltaOpen !== 0){
+        lines.push((deltaOpen < 0 ? Math.abs(deltaOpen) + ' fewer' : deltaOpen + ' more') + ' open items than the previous update (' + priorRecord.date + ')');
+      } else {
+        lines.push('No change in open items since the previous update (' + priorRecord.date + ')');
+      }
+    }
+    lines.push('');
+    lines.push('By category:');
+    record.categories.forEach(function(c){
+      var cPct = c.total ? Math.round(c.pass / c.total * 100) : 0;
+      lines.push('- ' + c.name + ': ' + c.pass + '/' + c.total + ' (' + cPct + '%)');
+    });
+
+    var problemCounts = {};
+    record.categories.forEach(function(c){
+      c.items.forEach(function(it){
+        if (it.status !== 'pass'){
+          var key = it.problem.trim().toLowerCase() || '(unspecified)';
+          if (!problemCounts[key]) problemCounts[key] = { label: it.problem.trim() || '(unspecified)', count: 0 };
+          problemCounts[key].count++;
+        }
+      });
+    });
+    var topProblems = Object.keys(problemCounts).map(function(k){ return problemCounts[k]; })
+      .sort(function(a, b){ return b.count - a.count; }).slice(0, 5);
+    if (topProblems.length){
+      lines.push('');
+      lines.push('Top open issues:');
+      topProblems.forEach(function(p){ lines.push('- ' + p.label + ': ' + p.count); });
+    }
+    lines.push('');
+    lines.push('(Generated by Rework Tracker)');
+    return { subject: subject, body: lines.join('\n') };
+  }
+
+  async function sendReportNow(){
+    reportErrorBanner.classList.remove('show');
+    var records = await loadAllSnapshots();
+    if (!records.length){
+      reportErrorBanner.textContent = 'No snapshots yet — upload a rework list first.';
+      reportErrorBanner.classList.add('show');
+      return;
+    }
+    var recipients = reportRecipientsInput.value.trim();
+    if (!recipients){
+      reportErrorBanner.textContent = 'Add at least one recipient email first.';
+      reportErrorBanner.classList.add('show');
+      return;
+    }
+    var latest = records[records.length - 1];
+    var prior = records.length > 1 ? records[records.length - 2] : null;
+    var content = buildReportEmailContent(latest, prior);
+    var mailtoUrl = 'mailto:' + recipients.replace(/\s+/g, '') + '?subject=' + encodeURIComponent(content.subject) + '&body=' + encodeURIComponent(content.body);
+    window.location.href = mailtoUrl;
+    await storeSet(REPORT_LAST_SENT_KEY, new Date().toISOString());
+    reportNudgeBanner.classList.remove('show');
+  }
+  sendReportBtn.addEventListener('click', sendReportNow);
+  reportNudgeSendBtn.addEventListener('click', sendReportNow);
+  reportNudgeDismissBtn.addEventListener('click', function(){
+    // Just hides for this page load — doesn't touch REPORT_LAST_SENT_KEY,
+    // so the nudge comes back next time the tool is opened rather than
+    // being silenced permanently by one dismissal.
+    reportNudgeBanner.classList.remove('show');
+  });
+
+  async function checkReportNudge(){
+    var records = await loadAllSnapshots();
+    if (!records.length) return; // nothing to report on yet
+    var latest = records[records.length - 1];
+    var lastSent = await storeGet(REPORT_LAST_SENT_KEY);
+    var cadence = await storeGet(REPORT_CADENCE_KEY);
+    var cadenceDays = (cadence && cadence.value) ? parseInt(cadence.value, 10) : 7;
+    if (!cadenceDays || cadenceDays < 1) cadenceDays = 7;
+    var lastSentAt = (lastSent && lastSent.value) ? new Date(lastSent.value) : null;
+    var daysSince = lastSentAt ? Math.floor((Date.now() - lastSentAt.getTime()) / 86400000) : null;
+    if (daysSince === null || daysSince >= cadenceDays){
+      var msg = daysSince === null
+        ? 'No report has been sent yet.'
+        : 'It\u2019s been ' + daysSince + ' day' + (daysSince === 1 ? '' : 's') + ' since the last report.';
+      reportNudgeText.textContent = msg + ' Send an update for ' + latest.date + '?';
+      reportNudgeBanner.classList.add('show');
+    }
+  }
+
+  // ---------- dashboard rendering ----------
+  function svgRing(pct, size, strokeW, color){
+    var r = (size - strokeW) / 2, c = size / 2;
+    var circ = 2 * Math.PI * r;
+    var dash = circ * (Math.max(0, Math.min(100, pct)) / 100);
+    return '<svg width="' + size + '" height="' + size + '" viewBox="0 0 ' + size + ' ' + size + '">' +
+      '<circle cx="' + c + '" cy="' + c + '" r="' + r + '" fill="none" stroke="var(--paper-line)" stroke-width="' + strokeW + '"/>' +
+      '<circle cx="' + c + '" cy="' + c + '" r="' + r + '" fill="none" stroke="' + color + '" stroke-width="' + strokeW + '" ' +
+        'stroke-dasharray="' + dash.toFixed(1) + ' ' + circ.toFixed(1) + '" stroke-linecap="round" transform="rotate(-90 ' + c + ' ' + c + ')"/>' +
+      '</svg>';
+  }
+
+  function svgTrendPct(records){
+    var w = 900, h = 160, padL = 30, padR = 10, padT = 10, padB = 26;
+    var n = records.length;
+    if (n < 2) return '<p class="empty-note">Trend will appear once at least two snapshots are on record.</p>';
+    var stepX = (w - padL - padR) / (n - 1);
+    function y(pct){ return padT + (h - padT - padB) * (1 - pct / 100); }
+    var pts = records.map(function(r, i){
+      var pct = r.grandTotal ? (r.grandPass / r.grandTotal * 100) : 0;
+      return (padL + i * stepX).toFixed(1) + ',' + y(pct).toFixed(1);
+    }).join(' ');
+    var labels = records.map(function(r, i){
+      return '<text x="' + (padL + i * stepX - 14).toFixed(1) + '" y="' + (h - padB + 18) + '" font-family="IBM Plex Mono" font-size="10" fill="#5C6A72">' + r.date.slice(5) + '</text>';
+    }).join('');
+    return '<svg viewBox="0 0 ' + w + ' ' + h + '" width="100%" style="overflow:visible;">' +
+      '<line x1="' + padL + '" y1="' + y(0) + '" x2="' + (w - padR) + '" y2="' + y(0) + '" stroke="var(--paper-line)"/>' +
+      '<line x1="' + padL + '" y1="' + y(100) + '" x2="' + (w - padR) + '" y2="' + y(100) + '" stroke="var(--paper-line)"/>' +
+      '<polyline points="' + pts + '" fill="none" stroke="var(--done)" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>' +
+      labels + '</svg>';
+  }
+
+  var currentRecord = null;   // the snapshot currently on screen — mutated directly on status edits
+  var currentAllItems = [];   // flattened items for the searchable table, carries catIdx/itemIdx back to currentRecord
+  var lastDashboardDate = null;
+  var itemFilterState = { text: '', category: '', location: '', pile: '', problem: '', showAll: false };
+
+  function statusSelectHtml(catIdx, itemIdx, status){
+    var opts = STATUS_STAGES.map(function(s){
+      return '<option value="' + s.value + '"' + (s.value === status ? ' selected' : '') + '>' + s.label + '</option>';
+    }).join('');
+    return '<select class="status-select ' + status + '" data-cat="' + catIdx + '" data-item="' + itemIdx + '">' + opts + '</select>';
+  }
+
+  function applyItemFilters(items){
+    var t = itemFilterState.text.toLowerCase();
+    var loc = itemFilterState.location.toLowerCase();
+    var pile = itemFilterState.pile.toLowerCase();
+    return items.filter(function(it){
+      if (!itemFilterState.showAll && it.status === 'pass') return false;
+      if (itemFilterState.category && it.category !== itemFilterState.category) return false;
+      if (itemFilterState.problem && it.problem !== itemFilterState.problem) return false;
+      if (loc && it.location.toLowerCase().indexOf(loc) === -1) return false;
+      if (pile && it.pile.toLowerCase().indexOf(pile) === -1) return false;
+      if (t){
+        var hay = (it.category + ' ' + it.location + ' ' + it.pile + ' ' + it.problem).toLowerCase();
+        if (hay.indexOf(t) === -1) return false;
+      }
+      return true;
+    });
+  }
+
+  // Renders the table shell (headers + the per-column filter row) once.
+  // The filter row's own inputs only ever trigger renderTableBody() —
+  // never a full re-render of this shell — otherwise rebuilding the
+  // table would destroy and recreate the input you're mid-keystroke in.
+  function renderPendingTable(){
+    var filterWrap = document.getElementById('itemFiltersWrap');
+    var container = document.getElementById('pendingTableWrap');
+    if (!container || !filterWrap) return;
+
+    var categoryOptions = currentRecord ? currentRecord.categories.map(function(c){ return c.name; }) : [];
+    var problemOptions = Array.from(new Set(currentAllItems.map(function(it){ return it.problem; }))).sort(function(a, b){ return a.localeCompare(b); });
+
+    var catOptHtml = '<option value="">All Categories</option>' + categoryOptions.map(function(c){
+      return '<option value="' + escapeHtml(c) + '"' + (c === itemFilterState.category ? ' selected' : '') + '>' + escapeHtml(c) + '</option>';
+    }).join('');
+    var probOptHtml = '<option value="">All Problems</option>' + problemOptions.map(function(p){
+      return '<option value="' + escapeHtml(p) + '"' + (p === itemFilterState.problem ? ' selected' : '') + '>' + escapeHtml(p) + '</option>';
+    }).join('');
+
+    // Filters live in their own responsive grid, not table cells — a row
+    // of table-cell dropdowns has no good way to reflow on a phone, a
+    // plain grid does it for free.
+    filterWrap.innerHTML =
+      '<div class="filter-field"><label>Category</label><select id="colFilterCategory">' + catOptHtml + '</select></div>' +
+      '<div class="filter-field"><label>Location</label><input type="text" id="colFilterLocation" placeholder="Filter…" value="' + escapeHtml(itemFilterState.location) + '"></div>' +
+      '<div class="filter-field"><label>Pile</label><input type="text" id="colFilterPile" placeholder="Filter…" value="' + escapeHtml(itemFilterState.pile) + '"></div>' +
+      '<div class="filter-field"><label>Problem</label><select id="colFilterProblem">' + probOptHtml + '</select></div>';
+
+    document.getElementById('colFilterCategory').addEventListener('change', function(e){ itemFilterState.category = e.target.value; renderTableBody(); });
+    document.getElementById('colFilterProblem').addEventListener('change', function(e){ itemFilterState.problem = e.target.value; renderTableBody(); });
+    document.getElementById('colFilterLocation').addEventListener('input', function(e){ itemFilterState.location = e.target.value; renderTableBody(); });
+    document.getElementById('colFilterPile').addEventListener('input', function(e){ itemFilterState.pile = e.target.value; renderTableBody(); });
+
+    container.innerHTML =
+      '<table class="items">' +
+        '<thead><tr><th>Category</th><th>Location</th><th>Pile</th><th>Problem</th><th>Status</th></tr></thead>' +
+        '<tbody id="itemsTbody"></tbody>' +
+      '</table>';
+
+    renderTableBody();
+  }
+
+  function renderTableBody(){
+    var tbody = document.getElementById('itemsTbody');
+    if (!tbody) return;
+    var items = applyItemFilters(currentAllItems);
+    if (!items.length){
+      tbody.innerHTML = '<tr><td colspan="5" style="text-align:center; font-family:var(--font-body); color:var(--text-dim); padding:16px;">No items match.</td></tr>';
+      return;
+    }
+    // data-label attributes let the mobile layout show each cell's column
+    // name when the table restacks into cards below the phone breakpoint.
+    tbody.innerHTML = items.map(function(it){
+      return '<tr>' +
+        '<td class="cat" data-label="Category">' + escapeHtml(it.category) + '</td>' +
+        '<td data-label="Location">' + escapeHtml(it.location) + '</td>' +
+        '<td data-label="Pile">' + escapeHtml(it.pile) + '</td>' +
+        '<td data-label="Problem" style="font-family:var(--font-body);">' + escapeHtml(it.problem) + '</td>' +
+        '<td data-label="Status">' + statusSelectHtml(it.catIdx, it.itemIdx, it.status) + '</td>' +
+      '</tr>';
+    }).join('');
+    tbody.querySelectorAll('select[data-cat]').forEach(function(sel){
+      sel.addEventListener('change', function(){
+        var catIdx = parseInt(sel.getAttribute('data-cat'), 10);
+        var itemIdx = parseInt(sel.getAttribute('data-item'), 10);
+        setItemStatus(catIdx, itemIdx, sel.value);
+      });
+    });
+  }
+
+  // Applies a status edit made by a team member: logs it to that item's
+  // change history, mutates the in-memory snapshot, recomputes every
+  // total, persists it (shared, so every team member sees it), then
+  // re-renders the dashboard. Filters live in itemFilterState (not read
+  // from the DOM), so they — and the "show history" toggle — survive
+  // this re-render on their own; only historyToggle needs explicit
+  // carrying through since it isn't part of that state object.
+  async function setItemStatus(catIdx, itemIdx, newStatus){
+    if (!currentRecord) return;
+    var item = currentRecord.categories[catIdx].items[itemIdx];
+    var oldStatus = item.status;
+    if (oldStatus === newStatus) return;
+    if (!item.history) item.history = [];
+    item.history.push({ from: oldStatus, to: newStatus, by: currentUserName(), at: new Date().toISOString() });
+    item.status = newStatus;
+    recomputeTotals(currentRecord);
+    await storeSetShared('rework:' + currentRecord.date, JSON.stringify(currentRecord));
+
+    var historyToggle = document.getElementById('historyToggle');
+    var preservedHistory = historyToggle ? historyToggle.checked : false;
+
+    await refreshHistory();
+    await renderDashboard(currentRecord.date, preservedHistory);
+  }
+
+  async function renderDashboard(date, presetHistory){
+    var records = await loadAllSnapshots();
+    var idx = records.findIndex(function(r){ return r.date === date; });
+    if (idx === -1) return;
+    var current = records[idx];
+    var prior = idx > 0 ? records[idx - 1] : null;
+    currentRecord = current;
+    if (date !== lastDashboardDate){
+      itemFilterState = { text: '', category: '', location: '', pile: '', problem: '', showAll: false };
+      lastDashboardDate = date;
+    }
+
+    var pct = current.grandTotal ? Math.round(current.grandPass / current.grandTotal * 100) : 0;
+    var priorOpen = prior ? prior.grandOpen : null;
+    var openDelta = priorOpen !== null ? (current.grandOpen - priorOpen) : null;
+
+    var deltaHtml;
+    if (openDelta === null){
+      deltaHtml = '<span class="hero-delta flat">— no prior snapshot</span>';
+    } else if (openDelta === 0){
+      deltaHtml = '<span class="hero-delta flat">No change since last snapshot</span>';
+    } else {
+      var good = openDelta < 0;
+      deltaHtml = '<span class="hero-delta ' + (good ? 'good' : 'bad') + '">' + (good ? '▼' : '▲') + ' ' + Math.abs(openDelta) + ' since last snapshot</span>';
+    }
+
+    var catGridHtml = current.categories.map(function(c){
+      var cPct = c.total ? Math.round(c.pass / c.total * 100) : 0;
+      var wAC = c.total ? (c.awaitingConstruction / c.total * 100) : 0;
+      var wAQ = c.total ? (c.awaitingQuality / c.total * 100) : 0;
+      var wP = c.total ? (c.pass / c.total * 100) : 0;
+      return '<div class="cat-row">' +
+        '<div class="cat-name"><span>' + escapeHtml(c.name) + '</span><span class="cat-count">' + c.pass + '/' + c.total + ' pass (' + cPct + '%)</span></div>' +
+        '<div class="bar-track">' +
+          '<div class="bar-seg awaiting-construction" style="width:' + wAC + '%;"></div>' +
+          '<div class="bar-seg awaiting-quality" style="width:' + wAQ + '%;"></div>' +
+          '<div class="bar-seg pass" style="width:' + wP + '%;"></div>' +
+        '</div>' +
+      '</div>';
+    }).join('');
+
+    // Problem breakdown across everything not yet "pass"
+    var problemCounts = {};
+    var allItems = [];
+    current.categories.forEach(function(c, catIdx){
+      c.items.forEach(function(it, itemIdx){
+        allItems.push({ catIdx: catIdx, itemIdx: itemIdx, category: c.name, location: it.location, pile: it.pile, problem: it.problem, status: it.status });
+        if (it.status !== 'pass'){
+          var key = it.problem.trim().toLowerCase() || '(unspecified)';
+          if (!problemCounts[key]) problemCounts[key] = { label: it.problem.trim() || '(unspecified)', count: 0 };
+          problemCounts[key].count++;
+        }
+      });
+    });
+    currentAllItems = allItems;
+    var topProblems = Object.keys(problemCounts).map(function(k){ return problemCounts[k]; })
+      .sort(function(a, b){ return b.count - a.count; }).slice(0, 8);
+    var maxCount = topProblems.length ? topProblems[0].count : 1;
+    var problemHtml = topProblems.length
+      ? topProblems.map(function(p){
+          var w = Math.max(4, Math.round(p.count / maxCount * 100));
+          return '<div class="problem-row"><div class="p-label">' + escapeHtml(p.label) + '</div><div class="p-bar-track"><div class="p-bar-fill" style="width:' + w + '%;"></div></div><div class="p-count">' + p.count + '</div></div>';
+        }).join('')
+      : '<p class="empty-note">Nothing open — everything on this snapshot has passed.</p>';
+
+    var html = '' +
+    '<div class="dash">' +
+      '<div class="dash-header">' +
+        '<div>' +
+          '<p class="eyebrow">Rework Status</p>' +
+          '<h3>' + current.date + '</h3>' +
+        '</div>' +
+        '<div class="meta">Source: <strong>' + escapeHtml(current.source) + '</strong><br>Snapshots on file: <strong>' + records.length + '</strong></div>' +
+      '</div>' +
+      '<div class="dash-hero">' +
+        '<div class="ring-wrap"><div class="ring-inner">' + svgRing(pct, 150, 14, pct >= 90 ? 'var(--done)' : 'var(--cyan)') +
+          '<div class="ring-label"><div class="pct">' + pct + '%</div><div class="cap">Pass</div></div>' +
+        '</div></div>' +
+        '<div class="hero-stats">' +
+          '<div class="hero-stat"><p class="label">Total Items</p><div class="value">' + current.grandTotal + '</div></div>' +
+          '<div class="hero-stat"><p class="label">Passed</p><div class="value">' + current.grandPass + '</div></div>' +
+          '<div class="hero-stat"><p class="label">Open</p><div class="value">' + current.grandOpen + '</div>' + deltaHtml +
+            '<div style="font-family:var(--font-mono); font-size:10.5px; color:var(--text-dim); margin-top:6px;">' + current.grandAwaitingConstruction + ' awaiting construction · ' + current.grandAwaitingQuality + ' awaiting quality</div>' +
+          '</div>' +
+        '</div>' +
+      '</div>' +
+      '<div class="cat-section"><h4>By Category</h4><p class="section-sub">Progress per sheet</p>' +
+        '<div class="status-legend"><span><i class="awaiting-construction"></i>Awaiting Construction</span><span><i class="awaiting-quality"></i>Awaiting Quality</span><span><i class="pass"></i>Pass</span></div>' +
+        '<div class="cat-grid">' + catGridHtml + '</div></div>' +
+      '<div class="trend-section"><h4>Trend</h4><p class="section-sub">Pass % across snapshots</p>' + svgTrendPct(records) + '</div>' +
+      '<div class="problem-section"><h4>Top Open Issues</h4><p class="section-sub">Most common problem types not yet passed</p>' + problemHtml + '</div>' +
+      '<div class="pending-section">' +
+        '<h4>Item List</h4><p class="section-sub">Search across all categories — change status directly in the dropdown</p>' +
+        '<div class="pending-controls">' +
+          '<input type="text" id="itemFilter" placeholder="Filter by location, pile, category, or problem…">' +
+          '<label><input type="checkbox" id="showAllToggle"> Show passed items too</label>' +
+          '<label><input type="checkbox" id="historyToggle"> Show change history</label>' +
+        '</div>' +
+        '<div class="item-filters" id="itemFiltersWrap"></div>' +
+        '<div class="pending-scroll" id="pendingTableWrap"></div>' +
+        '<div class="changelog-wrap" id="changelogWrap" style="display:none;"></div>' +
+      '</div>' +
+      '<div class="dash-footer">' +
+        '<p>Status changes made here are saved to this snapshot immediately and visible to anyone opening this tool.</p>' +
+        '<div style="display:flex; gap:10px;">' +
+          '<button class="btn btn-ghost" id="exportExcelBtn">Export to Excel</button>' +
+          '<button class="btn btn-ghost" onclick="window.print()">Print / Save as PDF</button>' +
+        '</div>' +
+      '</div>' +
+    '</div>';
+
+    dashboardMount.innerHTML = html;
+    var filterInput = document.getElementById('itemFilter');
+    var showAllToggle = document.getElementById('showAllToggle');
+    var historyToggle = document.getElementById('historyToggle');
+    var changelogWrap = document.getElementById('changelogWrap');
+    filterInput.value = itemFilterState.text;
+    showAllToggle.checked = itemFilterState.showAll;
+    historyToggle.checked = !!presetHistory;
+    renderPendingTable();
+    if (historyToggle.checked){ changelogWrap.style.display = 'block'; renderChangeLog(current); }
+    filterInput.addEventListener('input', function(){ itemFilterState.text = filterInput.value; renderTableBody(); });
+    showAllToggle.addEventListener('change', function(){ itemFilterState.showAll = showAllToggle.checked; renderTableBody(); });
+    historyToggle.addEventListener('change', function(){
+      changelogWrap.style.display = historyToggle.checked ? 'block' : 'none';
+      if (historyToggle.checked) renderChangeLog(current);
+    });
+    document.getElementById('exportExcelBtn').addEventListener('click', function(){ exportSnapshotToExcel(current, records); });
+  }
+
+  // Flat, most-recent-first audit log of every status change recorded
+  // against this snapshot, across all categories.
+  function renderChangeLog(record){
+    var container = document.getElementById('changelogWrap');
+    if (!container) return;
+    var entries = [];
+    record.categories.forEach(function(c){
+      c.items.forEach(function(it){
+        (it.history || []).forEach(function(h){
+          entries.push({
+            category: c.name, location: it.location, pile: it.pile,
+            from: statusLabel(h.from), to: statusLabel(h.to), by: h.by, at: h.at
+          });
+        });
+      });
+    });
+    if (!entries.length){
+      container.innerHTML = '<p class="empty-note">No status changes recorded yet on this snapshot.</p>';
+      return;
+    }
+    entries.sort(function(a, b){ return new Date(b.at) - new Date(a.at); });
+    var rows = entries.map(function(e){
+      return '<tr><td>' + new Date(e.at).toLocaleString() + '</td>' +
+        '<td class="who">' + escapeHtml(e.by) + '</td>' +
+        '<td class="cat">' + escapeHtml(e.category) + '</td>' +
+        '<td>' + escapeHtml(e.location) + '</td>' +
+        '<td>' + escapeHtml(e.pile) + '</td>' +
+        '<td class="change">' + escapeHtml(e.from) + '<span class="arrow">→</span>' + escapeHtml(e.to) + '</td></tr>';
+    }).join('');
+    container.innerHTML = '<table class="changelog"><thead><tr><th>When</th><th>By</th><th>Category</th><th>Location</th><th>Pile</th><th>Change</th></tr></thead><tbody>' + rows + '</tbody></table>';
+  }
+
+  // ---------- export ----------
+  function safeSheetName(name){
+    var cleaned = String(name).replace(/[\\\/\?\*\[\]:]/g, '').trim();
+    return (cleaned || 'Sheet').substring(0, 31);
+  }
+
+  function exportSnapshotToExcel(record, allRecords){
+    if (!window.XLSX){ showError('The spreadsheet export library failed to load. Check your connection and try again.'); return; }
+
+    var wb = XLSX.utils.book_new();
+
+    // Summary sheet: overall + per-category totals
+    var summaryRows = [{
+      Category: 'ALL',
+      Total: record.grandTotal,
+      Pass: record.grandPass,
+      'Awaiting Quality': record.grandAwaitingQuality,
+      'Awaiting Construction': record.grandAwaitingConstruction,
+      'Pass %': record.grandTotal ? Math.round(record.grandPass / record.grandTotal * 100) : 0
+    }];
+    record.categories.forEach(function(c){
+      summaryRows.push({
+        Category: c.name,
+        Total: c.total,
+        Pass: c.pass,
+        'Awaiting Quality': c.awaitingQuality,
+        'Awaiting Construction': c.awaitingConstruction,
+        'Pass %': c.total ? Math.round(c.pass / c.total * 100) : 0
+      });
+    });
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(summaryRows), 'Summary');
+
+    // One sheet per category, item-level detail with human-readable status
+    var usedNames = {};
+    record.categories.forEach(function(c){
+      var rows = c.items.length
+        ? c.items.map(function(it){
+            var lastChange = (it.history && it.history.length) ? it.history[it.history.length - 1] : null;
+            return {
+              Sno: it.sno != null ? it.sno : '',
+              Location: it.location,
+              Pile: it.pile,
+              Problem: it.problem,
+              Status: statusLabel(it.status),
+              'Last Changed By': lastChange ? lastChange.by : '',
+              'Last Changed At': lastChange ? new Date(lastChange.at).toLocaleString() : ''
+            };
+          })
+        : [{ Note: 'No items on this sheet' }];
+      var name = safeSheetName(c.name);
+      if (usedNames[name]){ usedNames[name]++; name = name.substring(0, 28) + '_' + usedNames[name]; }
+      else usedNames[name] = 1;
+      XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(rows), name);
+    });
+
+    // History sheet: pass-rate trend across every stored snapshot, for context
+    if (allRecords && allRecords.length > 1){
+      var historyRows = allRecords.map(function(r){
+        return {
+          Date: r.date,
+          Total: r.grandTotal,
+          Pass: r.grandPass,
+          'Awaiting Quality': r.grandAwaitingQuality,
+          'Awaiting Construction': r.grandAwaitingConstruction,
+          'Pass %': r.grandTotal ? Math.round(r.grandPass / r.grandTotal * 100) : 0
+        };
+      });
+      XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(historyRows), 'History');
+    }
+
+    try {
+      XLSX.writeFile(wb, 'Rework_Status_' + record.date + '.xlsx');
+    } catch(err){
+      showError('Could not trigger the download (' + (err && err.message ? err.message : 'unknown error') + '). Try again, or check if your browser blocked the file save.');
+    }
+  }
+
+  initGates();
+  refreshHistory();
+  checkReportNudge();
+})();
+</script>
+</body>
+</html>
