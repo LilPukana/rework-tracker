@@ -43,6 +43,14 @@
   .app-header p{ margin:8px 0 0; color:var(--on-navy-dim); font-size:13px; max-width:640px; }
   .app-header .rule{ height:2px; width:56px; background:var(--cyan); margin-top:14px; }
 
+  .site-tabs{ display:flex; gap:6px; flex-wrap:wrap; margin-bottom:18px; }
+  .site-tab{
+    font-family:var(--font-display); font-size:14px; font-weight:600; letter-spacing:.02em; text-transform:uppercase;
+    padding:8px 18px; border:1px solid var(--paper-line); background:#fff; color:var(--text-dim); cursor:pointer;
+  }
+  .site-tab:hover{ border-color:var(--cyan); color:var(--navy); }
+  .site-tab.active{ background:var(--navy); border-color:var(--navy); color:var(--on-navy); }
+
   .who-bar{ display:flex; align-items:center; gap:6px; justify-content:flex-end; margin:-10px 0 8px; font-size:12.5px; color:var(--text-dim); flex-wrap:wrap; }
   .who-bar strong{ color:var(--navy); }
   .link-btn{ background:none; border:none; color:var(--cyan); text-decoration:underline; cursor:pointer; font-size:12.5px; padding:0; font-family:var(--font-body); }
@@ -198,6 +206,16 @@
   .section-sub{ font-size:11.5px; color:var(--text-dim); margin:0 0 16px; }
 
   .cat-grid{ display:grid; grid-template-columns:1fr 1fr; gap:16px 32px; }
+
+  .sitemap-section{ padding:22px 32px; border-bottom:1px solid var(--paper-line); }
+  .sitemap-section h4{ font-family:var(--font-display); font-size:17px; text-transform:uppercase; letter-spacing:.02em; margin:0 0 4px; color:var(--navy); }
+  .sitemap-header{ display:flex; justify-content:space-between; align-items:center; gap:14px; flex-wrap:wrap; margin-bottom:12px; }
+  .sitemap-header select{ font-family:var(--font-body); font-size:12.5px; padding:7px 9px; border:1px solid var(--paper-line); background:#fff; }
+  .sitemap-wrap{ border:1px solid var(--paper-line); background:#FAFBFA; padding:12px; overflow:auto; -webkit-overflow-scrolling:touch; }
+  .sitemap-svg{ display:block; width:100%; height:auto; max-height:520px; }
+  .sitemap-rect{ cursor:pointer; stroke:transparent; stroke-width:2px; }
+  .sitemap-rect:hover, .sitemap-rect:active{ stroke:var(--navy); opacity:.85; }
+  .sitemap-empty{ color:var(--text-dim); font-size:13px; padding:20px; text-align:center; }
   .cat-row .cat-name{ font-family:var(--font-body); font-weight:600; font-size:13px; color:var(--navy); display:flex; justify-content:space-between; margin-bottom:6px; }
   .cat-row .cat-count{ font-family:var(--font-mono); font-size:11px; color:var(--text-dim); font-weight:500; }
   .bar-track{ height:12px; background:#E4E9E5; position:relative; display:flex; overflow:hidden; }
@@ -272,6 +290,16 @@
     .hero-stats{ padding:18px; gap:16px 0; }
     .hero-stat{ padding-right:16px; margin-right:16px; }
     .login-card{ padding:24px 20px; }
+
+    /* The map's whole point is tapping individual tables — shrinking it
+       to fit the screen width would make those a few pixels wide and
+       untappable. Instead it renders at real size here and the wrapper
+       scrolls/pans in both directions, like any map. A note in the UI
+       (added below) tells people to pinch-zoom and drag rather than
+       expecting it to fit on screen at once. */
+    .sitemap-svg{ width:auto; height:auto; max-height:none; }
+    .sitemap-wrap{ max-height:420px; }
+    .sitemap-section{ padding:18px 16px; }
 
     /* Every text/email/date input and select at 16px+ stops iOS Safari
        from auto-zooming the page when the field gets focus. */
@@ -368,6 +396,8 @@
     <div class="rule"></div>
   </div>
 
+  <div class="site-tabs" id="siteTabs"></div>
+
   <div class="who-bar" id="whoBar"></div>
   <div class="access-panel" id="accessPanel" style="display:none;"></div>
 
@@ -434,6 +464,7 @@
       <div class="backup-actions">
         <button class="btn btn-ghost" id="cloudSaveBtn">Save to Cloud</button>
         <button class="btn btn-ghost" id="cloudLoadBtn">Load from Cloud</button>
+        <button class="btn btn-ghost" id="clearCloudBtn">Clear Cloud Data</button>
         <button class="btn btn-ghost" id="cloudSwapBtn" title="Swap these two fields if they ended up in the wrong boxes">Swap Values</button>
       </div>
       <div class="cloud-result" id="cloudResult"></div>
@@ -636,6 +667,53 @@
 
   var selectedFiles = []; // { file, date, status, message }
   var isProcessing = false;
+
+  // ---------- sites ----------
+  // STS1-4 are the four physical sites being tracked, each with its own
+  // categories, item lists, and history — sharing this one tool but kept
+  // fully separate from each other. More sites (STS5, etc.) show up here
+  // automatically the first time a file for them is uploaded, they don't
+  // need to be added to this list by hand.
+  var KNOWN_SITES = ['STS1', 'STS2', 'STS3', 'STS4'];
+  var currentSite = 'STS1';
+
+  // Finds any site with data beyond the four declared above, so a fifth
+  // site doesn't need a code change to show up as a tab — it just needs
+  // one upload.
+  async function discoverSites(){
+    var listRes = await storeListShared('rework:');
+    var keys = listRes ? listRes.keys : [];
+    var found = {};
+    keys.forEach(function(k){
+      var m = k.match(/^rework:([^:]+):/);
+      if (m) found[m[1]] = true;
+    });
+    var sites = KNOWN_SITES.slice();
+    Object.keys(found).forEach(function(s){ if (sites.indexOf(s) === -1) sites.push(s); });
+    return sites;
+  }
+
+  async function renderSiteTabs(){
+    var tabsEl = document.getElementById('siteTabs');
+    if (!tabsEl) return;
+    var sites = await discoverSites();
+    tabsEl.innerHTML = sites.map(function(s){
+      return '<button type="button" class="site-tab' + (s === currentSite ? ' active' : '') + '" data-site="' + escapeHtml(s) + '">' + escapeHtml(s) + '</button>';
+    }).join('');
+    tabsEl.querySelectorAll('.site-tab').forEach(function(btn){
+      btn.addEventListener('click', async function(){
+        var site = btn.getAttribute('data-site');
+        if (site === currentSite) return;
+        currentSite = site;
+        storeSet('ui:current_site', site);
+        await renderSiteTabs();
+        await refreshHistory();
+        dashboardMount.innerHTML = '<div class="placeholder">Upload a rework list above to see the status dashboard.</div>';
+        var records = await loadAllSnapshots();
+        if (records.length) await renderDashboard(records[records.length - 1].date);
+      });
+    });
+  }
 
   function todayISO(){
     var d = new Date();
@@ -964,12 +1042,236 @@
     return s ? s.label : v;
   }
 
+  // ---------- site map ----------
+  // Extracted once from the Cambridge STS1 QC workbook's own "map" region
+  // (each Table No sits in a specifically-positioned, specifically-sized
+  // merged cell there — that's what created the angled-bar visual). This
+  // geometry is specific to that one physical site; if a workbook from a
+  // different site is ever uploaded, its Table Nos won't match these
+  // positions and the map will simply have nothing to draw for them.
+  // (Two entries — "13-2-6" and "3-1-54" — look like typos in the source
+  // file for what should be "1-2-6" and "1-1-54"; left as-is rather than
+  // guessed at, so those two tables just won't appear on the map.)
+  var SITE_MAP_GEOMETRY = {
+    STS1: {"1-1-17":{r1:15,c1:19,r2:24,c2:19},"1-1-18":{r1:16,c1:20,r2:25,c2:20},"1-1-19":{r1:17,c1:21,r2:26,c2:21},"1-1-20":{r1:18,c1:22,r2:27,c2:22},"1-1-21":{r1:11,c1:23,r2:28,c2:23},"1-1-22":{r1:12,c1:24,r2:29,c2:24},"1-1-23":{r1:13,c1:25,r2:30,c2:25},"1-1-24":{r1:14,c1:26,r2:31,c2:26},"1-1-25":{r1:15,c1:27,r2:32,c2:27},"1-1-26":{r1:8,c1:28,r2:33,c2:28},"1-1-27":{r1:9,c1:29,r2:34,c2:29},"1-1-28":{r1:10,c1:30,r2:35,c2:30},"1-1-29":{r1:11,c1:31,r2:36,c2:31},"1-1-30":{r1:12,c1:32,r2:37,c2:32},"1-1-31":{r1:5,c1:33,r2:38,c2:33},"1-1-32":{r1:6,c1:34,r2:39,c2:34},"1-1-33":{r1:7,c1:35,r2:40,c2:35},"1-1-34":{r1:8,c1:36,r2:41,c2:36},"1-1-35":{r1:9,c1:37,r2:42,c2:37},"1-1-36":{r1:10,c1:38,r2:43,c2:38},"1-1-37":{r1:11,c1:39,r2:44,c2:39},"1-1-38":{r1:12,c1:40,r2:45,c2:40},"1-1-39":{r1:13,c1:41,r2:46,c2:41},"1-1-40":{r1:14,c1:42,r2:47,c2:42},"1-1-41":{r1:15,c1:43,r2:48,c2:43},"1-1-42":{r1:16,c1:44,r2:49,c2:44},"1-1-43":{r1:17,c1:45,r2:50,c2:45},"1-1-44":{r1:18,c1:46,r2:51,c2:46},"1-1-45":{r1:19,c1:47,r2:52,c2:47},"1-1-46":{r1:20,c1:48,r2:53,c2:48},"1-1-47":{r1:21,c1:49,r2:54,c2:49},"1-1-48":{r1:22,c1:50,r2:55,c2:50},"1-1-49":{r1:23,c1:51,r2:56,c2:51},"1-1-50":{r1:24,c1:52,r2:57,c2:52},"1-1-51":{r1:25,c1:53,r2:58,c2:53},"1-1-52":{r1:26,c1:54,r2:59,c2:54},"1-1-53":{r1:27,c1:55,r2:60,c2:55},"1-1-54":{r1:28,c1:56,r2:61,c2:56},"1-1-55":{r1:29,c1:57,r2:62,c2:57},"1-1-56":{r1:30,c1:58,r2:63,c2:58},"1-1-57":{r1:31,c1:59,r2:64,c2:59},"1-1-58":{r1:32,c1:60,r2:65,c2:60},"1-1-59":{r1:33,c1:61,r2:66,c2:61},"1-1-60":{r1:34,c1:62,r2:67,c2:62},"1-1-61":{r1:35,c1:63,r2:68,c2:63},"1-1-62":{r1:36,c1:64,r2:69,c2:64},"1-1-63":{r1:37,c1:65,r2:70,c2:65},"1-1-64":{r1:38,c1:66,r2:71,c2:66},"1-1-65":{r1:39,c1:67,r2:72,c2:67},"1-1-66":{r1:40,c1:68,r2:73,c2:68},"1-1-67":{r1:41,c1:69,r2:74,c2:69},"1-2-1":{r1:34,c1:3,r2:45,c2:3},"1-2-10":{r1:27,c1:12,r2:54,c2:12},"1-2-11":{r1:28,c1:13,r2:55,c2:13},"1-2-12":{r1:29,c1:14,r2:56,c2:14},"1-2-13":{r1:21,c1:15,r2:57,c2:15},"1-2-14":{r1:22,c1:16,r2:58,c2:16},"1-2-15":{r1:23,c1:17,r2:59,c2:17},"1-2-16":{r1:24,c1:18,r2:60,c2:18},"1-2-17":{r1:25,c1:19,r2:61,c2:19},"1-2-18":{r1:26,c1:20,r2:62,c2:20},"1-2-19":{r1:27,c1:21,r2:63,c2:21},"1-2-2":{r1:35,c1:4,r2:46,c2:4},"1-2-20":{r1:28,c1:22,r2:64,c2:22},"1-2-21":{r1:29,c1:23,r2:65,c2:23},"1-2-22":{r1:30,c1:24,r2:66,c2:24},"1-2-23":{r1:31,c1:25,r2:67,c2:25},"1-2-24":{r1:32,c1:26,r2:68,c2:26},"1-2-25":{r1:33,c1:27,r2:69,c2:27},"1-2-26":{r1:34,c1:28,r2:70,c2:28},"1-2-27":{r1:35,c1:29,r2:71,c2:29},"1-2-28":{r1:36,c1:30,r2:72,c2:30},"1-2-29":{r1:37,c1:31,r2:73,c2:31},"1-2-3":{r1:36,c1:5,r2:47,c2:5},"1-2-30":{r1:38,c1:32,r2:74,c2:32},"1-2-31":{r1:39,c1:33,r2:75,c2:33},"1-2-32":{r1:40,c1:34,r2:76,c2:34},"1-2-33":{r1:41,c1:35,r2:77,c2:35},"1-2-34":{r1:42,c1:36,r2:78,c2:36},"1-2-35":{r1:43,c1:37,r2:79,c2:37},"1-2-36":{r1:44,c1:38,r2:80,c2:38},"1-2-37":{r1:45,c1:39,r2:81,c2:39},"1-2-38":{r1:46,c1:40,r2:82,c2:40},"1-2-39":{r1:47,c1:41,r2:83,c2:41},"1-2-4":{r1:29,c1:6,r2:48,c2:6},"1-2-40":{r1:48,c1:42,r2:84,c2:42},"1-2-41":{r1:49,c1:43,r2:85,c2:43},"1-2-42":{r1:50,c1:44,r2:86,c2:44},"1-2-43":{r1:51,c1:45,r2:87,c2:45},"1-2-44":{r1:52,c1:46,r2:88,c2:46},"1-2-45":{r1:53,c1:47,r2:89,c2:47},"1-2-46":{r1:54,c1:48,r2:90,c2:48},"1-2-47":{r1:55,c1:49,r2:91,c2:49},"1-2-48":{r1:56,c1:50,r2:92,c2:50},"1-2-49":{r1:57,c1:51,r2:93,c2:51},"1-2-5":{r1:30,c1:7,r2:49,c2:7},"1-2-50":{r1:58,c1:52,r2:94,c2:52},"1-2-51":{r1:59,c1:53,r2:95,c2:53},"1-2-52":{r1:60,c1:54,r2:96,c2:54},"1-2-53":{r1:61,c1:55,r2:97,c2:55},"1-2-54":{r1:62,c1:56,r2:98,c2:56},"1-2-55":{r1:63,c1:57,r2:99,c2:57},"1-2-56":{r1:64,c1:58,r2:100,c2:58},"1-2-57":{r1:65,c1:59,r2:101,c2:59},"1-2-58":{r1:66,c1:60,r2:102,c2:60},"1-2-59":{r1:67,c1:61,r2:103,c2:61},"1-2-6":{r1:31,c1:8,r2:50,c2:8},"1-2-60":{r1:68,c1:62,r2:104,c2:62},"1-2-61":{r1:69,c1:63,r2:105,c2:63},"1-2-62":{r1:70,c1:64,r2:106,c2:64},"1-2-63":{r1:71,c1:65,r2:107,c2:65},"1-2-64":{r1:72,c1:66,r2:108,c2:66},"1-2-65":{r1:73,c1:67,r2:109,c2:67},"1-2-66":{r1:74,c1:68,r2:110,c2:68},"1-2-67":{r1:75,c1:69,r2:111,c2:69},"1-2-68":{r1:76,c1:70,r2:112,c2:70},"1-2-7":{r1:32,c1:9,r2:51,c2:9},"1-2-8":{r1:33,c1:10,r2:52,c2:10},"1-2-9":{r1:26,c1:11,r2:53,c2:11},"13-2-6":{r1:31,c1:8,r2:50,c2:8},"3-2-13":{r1:21,c1:15,r2:57,c2:15}},
+    STS3: {"3-1-29":{r1:5,c1:31,r2:13,c2:31},"3-1-30":{r1:6,c1:32,r2:14,c2:32},"3-1-31":{r1:7,c1:33,r2:15,c2:33},"3-1-32":{r1:8,c1:34,r2:16,c2:34},"3-1-33":{r1:9,c1:35,r2:17,c2:35},"3-1-34":{r1:10,c1:36,r2:18,c2:36},"3-2-11":{r1:23,c1:13,r2:32,c2:13},"3-2-12":{r1:24,c1:14,r2:33,c2:14},"3-2-13":{r1:25,c1:15,r2:34,c2:15},"3-2-14":{r1:26,c1:16,r2:35,c2:16},"3-2-15":{r1:27,c1:17,r2:36,c2:17},"3-2-16":{r1:20,c1:18,r2:37,c2:18},"3-2-17":{r1:21,c1:19,r2:38,c2:19},"3-2-18":{r1:22,c1:20,r2:39,c2:20},"3-2-19":{r1:23,c1:21,r2:40,c2:21},"3-2-20":{r1:14,c1:22,r2:41,c2:22},"3-2-21":{r1:15,c1:23,r2:42,c2:23},"3-2-22":{r1:16,c1:24,r2:43,c2:24},"3-2-23":{r1:17,c1:25,r2:44,c2:25},"3-2-24":{r1:9,c1:26,r2:45,c2:26},"3-2-25":{r1:10,c1:27,r2:46,c2:27},"3-2-26":{r1:11,c1:28,r2:47,c2:28},"3-2-27":{r1:12,c1:29,r2:48,c2:29},"3-2-28":{r1:13,c1:30,r2:49,c2:30},"3-2-29":{r1:14,c1:31,r2:50,c2:31},"3-2-30":{r1:15,c1:32,r2:51,c2:32},"3-2-31":{r1:16,c1:33,r2:52,c2:33},"3-2-32":{r1:17,c1:34,r2:53,c2:34},"3-2-33":{r1:18,c1:35,r2:54,c2:35},"3-2-34":{r1:19,c1:36,r2:55,c2:36},"3-2-35":{r1:20,c1:37,r2:56,c2:37},"3-2-36":{r1:21,c1:38,r2:57,c2:38},"3-2-37":{r1:22,c1:39,r2:58,c2:39},"3-2-38":{r1:23,c1:40,r2:59,c2:40},"3-2-39":{r1:24,c1:41,r2:60,c2:41},"3-2-40":{r1:25,c1:42,r2:61,c2:42},"3-3-1":{r1:30,c1:3,r2:39,c2:3},"3-3-10":{r1:32,c1:12,r2:68,c2:12},"3-3-11":{r1:33,c1:13,r2:69,c2:13},"3-3-12":{r1:34,c1:14,r2:70,c2:14},"3-3-13":{r1:35,c1:15,r2:71,c2:15},"3-3-14":{r1:36,c1:16,r2:72,c2:16},"3-3-15":{r1:37,c1:17,r2:73,c2:17},"3-3-16":{r1:38,c1:18,r2:74,c2:18},"3-3-17":{r1:39,c1:19,r2:75,c2:19},"3-3-18":{r1:40,c1:20,r2:76,c2:20},"3-3-19":{r1:41,c1:21,r2:77,c2:21},"3-3-2":{r1:29,c1:4,r2:38,c2:4},"3-3-20":{r1:42,c1:22,r2:78,c2:22},"3-3-21":{r1:43,c1:23,r2:79,c2:23},"3-3-22":{r1:44,c1:24,r2:80,c2:24},"3-3-23":{r1:45,c1:25,r2:81,c2:25},"3-3-24":{r1:46,c1:26,r2:82,c2:26},"3-3-25":{r1:47,c1:27,r2:83,c2:27},"3-3-26":{r1:48,c1:28,r2:84,c2:28},"3-3-27":{r1:49,c1:29,r2:85,c2:29},"3-3-28":{r1:50,c1:30,r2:86,c2:30},"3-3-29":{r1:51,c1:31,r2:87,c2:31},"3-3-3":{r1:28,c1:5,r2:46,c2:5},"3-3-30":{r1:52,c1:32,r2:88,c2:32},"3-3-31":{r1:53,c1:33,r2:89,c2:33},"3-3-32":{r1:54,c1:34,r2:90,c2:34},"3-3-33":{r1:55,c1:35,r2:91,c2:35},"3-3-34":{r1:56,c1:36,r2:92,c2:36},"3-3-35":{r1:57,c1:37,r2:93,c2:37},"3-3-36":{r1:58,c1:38,r2:94,c2:38},"3-3-37":{r1:59,c1:39,r2:95,c2:39},"3-3-38":{r1:60,c1:40,r2:96,c2:40},"3-3-39":{r1:61,c1:41,r2:97,c2:41},"3-3-4":{r1:27,c1:6,r2:45,c2:6},"3-3-40":{r1:62,c1:42,r2:98,c2:42},"3-3-5":{r1:27,c1:7,r2:54,c2:7},"3-3-6":{r1:28,c1:8,r2:55,c2:8},"3-3-7":{r1:29,c1:9,r2:56,c2:9},"3-3-8":{r1:30,c1:10,r2:66,c2:10},"3-3-9":{r1:31,c1:11,r2:67,c2:11},"3-4-50":{r1:26,c1:52,r2:34,c2:52},"3-4-51":{r1:27,c1:53,r2:35,c2:53},"3-4-52":{r1:28,c1:54,r2:36,c2:54},"3-4-53":{r1:29,c1:55,r2:37,c2:55},"3-5-50":{r1:35,c1:52,r2:71,c2:52},"3-5-51":{r1:36,c1:53,r2:72,c2:53},"3-5-52":{r1:37,c1:54,r2:73,c2:54},"3-5-53":{r1:38,c1:55,r2:74,c2:55},"3-5-54":{r1:39,c1:56,r2:75,c2:56},"3-5-55":{r1:40,c1:57,r2:76,c2:57},"3-5-56":{r1:41,c1:58,r2:77,c2:58},"3-5-57":{r1:42,c1:59,r2:78,c2:59},"3-5-58":{r1:48,c1:60,r2:79,c2:60},"3-5-59":{r1:49,c1:61,r2:80,c2:61},"3-5-60":{r1:50,c1:62,r2:81,c2:62},"3-5-61":{r1:57,c1:63,r2:82,c2:63},"3-5-62":{r1:58,c1:64,r2:83,c2:64},"3-5-63":{r1:59,c1:65,r2:84,c2:65},"3-5-64":{r1:60,c1:66,r2:85,c2:66},"3-5-65":{r1:69,c1:67,r2:86,c2:67},"3-5-66":{r1:70,c1:68,r2:87,c2:68},"3-5-67":{r1:71,c1:69,r2:88,c2:69},"3-6-41":{r1:63,c1:43,r2:99,c2:43},"3-6-42":{r1:64,c1:44,r2:100,c2:44},"3-6-43":{r1:65,c1:45,r2:101,c2:45},"3-6-44":{r1:66,c1:46,r2:102,c2:46},"3-6-45":{r1:67,c1:47,r2:103,c2:47},"3-6-46":{r1:68,c1:48,r2:104,c2:48},"3-6-47":{r1:69,c1:49,r2:105,c2:49},"3-6-48":{r1:70,c1:50,r2:106,c2:50},"3-6-49":{r1:71,c1:51,r2:107,c2:51},"3-6-50":{r1:72,c1:52,r2:108,c2:52},"3-6-51":{r1:73,c1:53,r2:109,c2:53},"3-6-52":{r1:74,c1:54,r2:110,c2:54},"3-6-53":{r1:75,c1:55,r2:111,c2:55},"3-6-54":{r1:76,c1:56,r2:112,c2:56},"3-6-55":{r1:77,c1:57,r2:113,c2:57},"3-6-56":{r1:78,c1:58,r2:114,c2:58},"3-6-57":{r1:79,c1:59,r2:115,c2:59},"3-6-58":{r1:80,c1:60,r2:116,c2:60},"3-6-59":{r1:81,c1:61,r2:117,c2:61},"3-6-60":{r1:82,c1:62,r2:118,c2:62},"3-6-61":{r1:83,c1:63,r2:119,c2:63},"3-6-62":{r1:84,c1:64,r2:120,c2:64},"3-6-63":{r1:85,c1:65,r2:121,c2:65},"3-6-64":{r1:86,c1:66,r2:122,c2:66},"3-6-65":{r1:87,c1:67,r2:123,c2:67},"3-6-66":{r1:88,c1:68,r2:124,c2:68},"3-6-67":{r1:89,c1:69,r2:125,c2:69},"3-6-68":{r1:90,c1:70,r2:126,c2:70},"3-6-69":{r1:91,c1:71,r2:127,c2:71},"3-6-70":{r1:92,c1:72,r2:128,c2:72},"3-6-71":{r1:93,c1:73,r2:129,c2:73},"3-6-72":{r1:102,c1:74,r2:130,c2:74},"3-6-73":{r1:103,c1:75,r2:131,c2:75},"3-6-74":{r1:104,c1:76,r2:132,c2:76},"3-6-75":{r1:111,c1:77,r2:133,c2:77},"3-6-76":{r1:112,c1:78,r2:134,c2:78},"3-6-77":{r1:113,c1:79,r2:135,c2:79},"3-6-78":{r1:114,c1:80,r2:136,c2:80},"3-6-79":{r1:120,c1:81,r2:137,c2:81},"3-6-80":{r1:121,c1:82,r2:138,c2:82},"3-6-81":{r1:122,c1:83,r2:139,c2:83},"3-6-82":{r1:123,c1:84,r2:140,c2:84}},
+    STS4: {"4-1-10":{r1:21,c1:12,r2:40,c2:12},"4-1-11":{r1:20,c1:13,r2:39,c2:13},"4-1-12":{r1:19,c1:14,r2:38,c2:14},"4-1-13":{r1:18,c1:15,r2:37,c2:15},"4-1-14":{r1:17,c1:16,r2:36,c2:16},"4-1-15":{r1:16,c1:17,r2:35,c2:17},"4-1-16":{r1:35,c1:18,r2:71,c2:18},"4-1-17":{r1:14,c1:19,r2:33,c2:19},"4-1-18":{r1:13,c1:20,r2:32,c2:20},"4-1-19":{r1:32,c1:21,r2:68,c2:21},"4-1-20":{r1:11,c1:22,r2:30,c2:22},"4-1-21":{r1:10,c1:23,r2:29,c2:23},"4-1-22":{r1:9,c1:24,r2:28,c2:24},"4-1-23":{r1:8,c1:25,r2:27,c2:25},"4-1-24":{r1:7,c1:26,r2:26,c2:26},"4-1-25":{r1:6,c1:27,r2:25,c2:27},"4-1-26":{r1:14,c1:28,r2:24,c2:28},"4-1-27":{r1:13,c1:29,r2:23,c2:29},"4-1-28":{r1:12,c1:30,r2:22,c2:30},"4-1-29":{r1:11,c1:31,r2:21,c2:31},"4-1-30":{r1:10,c1:32,r2:20,c2:32},"4-1-31":{r1:9,c1:33,r2:19,c2:33},"4-1-7":{r1:27,c1:9,r2:37,c2:9},"4-1-8":{r1:23,c1:10,r2:42,c2:10},"4-1-9":{r1:22,c1:11,r2:41,c2:11},"4-2-1":{r1:35,c1:3,r2:45,c2:3},"4-2-10":{r1:41,c1:12,r2:77,c2:12},"4-2-11":{r1:40,c1:13,r2:76,c2:13},"4-2-12":{r1:39,c1:14,r2:75,c2:14},"4-2-13":{r1:38,c1:15,r2:74,c2:15},"4-2-14":{r1:37,c1:16,r2:73,c2:16},"4-2-15":{r1:36,c1:17,r2:72,c2:17},"4-2-16":{r1:35,c1:18,r2:71,c2:18},"4-2-17":{r1:34,c1:19,r2:70,c2:19},"4-2-18":{r1:33,c1:20,r2:69,c2:20},"4-2-19":{r1:32,c1:21,r2:68,c2:21},"4-2-2":{r1:30,c1:4,r2:49,c2:4},"4-2-20":{r1:31,c1:22,r2:67,c2:22},"4-2-21":{r1:30,c1:23,r2:66,c2:23},"4-2-22":{r1:29,c1:24,r2:65,c2:24},"4-2-23":{r1:28,c1:25,r2:64,c2:25},"4-2-24":{r1:27,c1:26,r2:63,c2:26},"4-2-25":{r1:26,c1:27,r2:62,c2:27},"4-2-26":{r1:25,c1:28,r2:61,c2:28},"4-2-27":{r1:24,c1:29,r2:60,c2:29},"4-2-28":{r1:23,c1:30,r2:59,c2:30},"4-2-29":{r1:22,c1:31,r2:58,c2:31},"4-2-3":{r1:36,c1:5,r2:55,c2:5},"4-2-30":{r1:21,c1:32,r2:57,c2:32},"4-2-31":{r1:20,c1:33,r2:56,c2:33},"4-2-32":{r1:19,c1:34,r2:55,c2:34},"4-2-33":{r1:18,c1:35,r2:54,c2:35},"4-2-34":{r1:17,c1:36,r2:53,c2:36},"4-2-35":{r1:16,c1:37,r2:52,c2:37},"4-2-36":{r1:24,c1:38,r2:51,c2:38},"4-2-37":{r1:23,c1:39,r2:50,c2:39},"4-2-38":{r1:22,c1:40,r2:49,c2:40},"4-2-39":{r1:21,c1:41,r2:48,c2:41},"4-2-4":{r1:31,c1:6,r2:58,c2:6},"4-2-40":{r1:29,c1:42,r2:48,c2:42},"4-2-41":{r1:29,c1:43,r2:48,c2:43},"4-2-42":{r1:29,c1:44,r2:48,c2:44},"4-2-43":{r1:29,c1:45,r2:48,c2:45},"4-2-44":{r1:29,c1:46,r2:48,c2:46},"4-2-45":{r1:38,c1:47,r2:48,c2:47},"4-2-46":{r1:38,c1:48,r2:48,c2:48},"4-2-47":{r1:38,c1:49,r2:48,c2:49},"4-2-48":{r1:38,c1:50,r2:48,c2:50},"4-2-49":{r1:38,c1:51,r2:48,c2:51},"4-2-5":{r1:27,c1:7,r2:63,c2:7},"4-2-6":{r1:31,c1:8,r2:58,c2:8},"4-2-7":{r1:38,c1:9,r2:74,c2:9},"4-2-8":{r1:43,c1:10,r2:79,c2:10},"4-2-9":{r1:42,c1:11,r2:78,c2:11},"4-3-49":{r1:58,c1:51,r2:77,c2:51},"4-3-50":{r1:59,c1:52,r2:78,c2:52},"4-3-51":{r1:60,c1:53,r2:79,c2:53},"4-3-52":{r1:61,c1:54,r2:80,c2:54},"4-3-53":{r1:62,c1:55,r2:81,c2:55},"4-3-54":{r1:63,c1:56,r2:82,c2:56},"4-3-55":{r1:64,c1:57,r2:83,c2:57},"4-3-56":{r1:65,c1:58,r2:84,c2:58},"4-3-57":{r1:66,c1:59,r2:85,c2:59},"4-3-58":{r1:67,c1:60,r2:86,c2:60},"4-3-59":{r1:68,c1:61,r2:87,c2:61},"4-3-60":{r1:69,c1:62,r2:88,c2:62},"4-3-61":{r1:70,c1:63,r2:89,c2:63},"4-3-62":{r1:71,c1:64,r2:90,c2:64},"4-3-63":{r1:72,c1:65,r2:91,c2:65},"4-4-55":{r1:84,c1:57,r2:120,c2:57},"4-4-56":{r1:85,c1:58,r2:121,c2:58},"4-4-57":{r1:86,c1:59,r2:122,c2:59},"4-4-58":{r1:87,c1:60,r2:123,c2:60},"4-4-59":{r1:88,c1:61,r2:124,c2:61},"4-4-60":{r1:89,c1:62,r2:125,c2:62},"4-4-61":{r1:90,c1:63,r2:126,c2:63},"4-4-62":{r1:91,c1:64,r2:127,c2:64},"4-4-63":{r1:92,c1:65,r2:128,c2:65},"4-5-68":{r1:71,c1:74,r2:81,c2:74},"4-5-69":{r1:71,c1:75,r2:81,c2:75},"4-5-70":{r1:70,c1:76,r2:89,c2:76},"4-5-71":{r1:70,c1:77,r2:89,c2:77},"4-5-72":{r1:70,c1:78,r2:89,c2:78},"4-5-73":{r1:69,c1:79,r2:96,c2:79},"4-5-74":{r1:69,c1:80,r2:96,c2:80},"4-5-75":{r1:69,c1:81,r2:105,c2:81},"4-5-76":{r1:72,c1:82,r2:108,c2:82},"4-5-77":{r1:74,c1:83,r2:110,c2:83},"4-5-78":{r1:76,c1:84,r2:112,c2:84},"4-5-79":{r1:78,c1:85,r2:114,c2:85},"4-5-80":{r1:80,c1:86,r2:116,c2:86},"4-5-81":{r1:82,c1:87,r2:118,c2:87},"4-5-82":{r1:84,c1:88,r2:120,c2:88},"4-5-83":{r1:85,c1:89,r2:121,c2:89},"4-5-84":{r1:86,c1:90,r2:122,c2:90},"4-5-85":{r1:87,c1:91,r2:123,c2:91},"4-5-86":{r1:88,c1:92,r2:124,c2:92},"4-5-87":{r1:89,c1:93,r2:125,c2:93},"4-5-88":{r1:90,c1:94,r2:126,c2:94},"4-5-89":{r1:91,c1:95,r2:127,c2:95},"4-6-83":{r1:122,c1:89,r2:132,c2:89},"4-6-84":{r1:123,c1:90,r2:133,c2:90},"4-6-85":{r1:124,c1:91,r2:134,c2:91},"4-6-86":{r1:125,c1:92,r2:135,c2:92},"4-6-87":{r1:126,c1:93,r2:136,c2:93},"4-6-88":{r1:127,c1:94,r2:137,c2:94},"4-6-89":{r1:128,c1:95,r2:138,c2:95},"4-7-64":{r1:53,c1:70,r2:63,c2:70},"4-7-65":{r1:53,c1:71,r2:63,c2:71},"4-7-66":{r1:52,c1:72,r2:62,c2:72},"4-7-67":{r1:52,c1:73,r2:62,c2:73},"4-7-68":{r1:52,c1:74,r2:62,c2:74},"4-7-69":{r1:52,c1:75,r2:62,c2:75},"4-7-70":{r1:51,c1:76,r2:61,c2:76},"4-7-71":{r1:51,c1:77,r2:61,c2:77},"4-7-72":{r1:51,c1:78,r2:61,c2:78},"4-7-73":{r1:51,c1:79,r2:61,c2:79},"4-7-74":{r1:50,c1:80,r2:60,c2:80},"4-7-75":{r1:49,c1:81,r2:59,c2:81},"4-7-76":{r1:48,c1:82,r2:58,c2:82},"4-7-77":{r1:47,c1:83,r2:57,c2:83},"4-7-78":{r1:46,c1:84,r2:56,c2:84},"4-7-79":{r1:45,c1:85,r2:55,c2:85},"4-7-80":{r1:44,c1:86,r2:54,c2:86},"4-7-81":{r1:43,c1:87,r2:52,c2:87},"4-7-82":{r1:42,c1:88,r2:51,c2:88},"4-8-79":{r1:64,c1:85,r2:73,c2:85},"4-8-80":{r1:64,c1:86,r2:73,c2:86},"4-8-81":{r1:63,c1:87,r2:72,c2:87},"4-8-82":{r1:63,c1:88,r2:72,c2:88},"4-8-83":{r1:62,c1:89,r2:81,c2:89},"4-8-84":{r1:62,c1:90,r2:81,c2:90},"4-8-85":{r1:61,c1:91,r2:80,c2:91},"4-8-86":{r1:61,c1:92,r2:80,c2:92},"4-8-87":{r1:60,c1:93,r2:79,c2:93},"4-8-88":{r1:60,c1:94,r2:79,c2:94},"4-8-89":{r1:59,c1:95,r2:78,c2:95},"4-8-90":{r1:59,c1:96,r2:78,c2:96},"4-8-91":{r1:58,c1:97,r2:77,c2:97},"4-8-92":{r1:58,c1:98,r2:77,c2:98},"4-9-100":{r1:43,c1:106,r2:62,c2:106},"4-9-101":{r1:43,c1:107,r2:62,c2:107},"4-9-102":{r1:43,c1:108,r2:62,c2:108},"4-9-103":{r1:42,c1:109,r2:61,c2:109},"4-9-104":{r1:42,c1:110,r2:61,c2:110},"4-9-105":{r1:42,c1:111,r2:61,c2:111},"4-9-106":{r1:42,c1:112,r2:61,c2:112},"4-9-107":{r1:42,c1:113,r2:61,c2:113},"4-9-108":{r1:42,c1:114,r2:61,c2:114},"4-9-109":{r1:41,c1:115,r2:50,c2:115},"4-9-110":{r1:41,c1:116,r2:50,c2:116},"4-9-111":{r1:41,c1:117,r2:50,c2:117},"4-9-112":{r1:41,c1:118,r2:50,c2:118},"4-9-113":{r1:40,c1:119,r2:49,c2:119},"4-9-114":{r1:40,c1:120,r2:49,c2:120},"4-9-115":{r1:40,c1:121,r2:49,c2:121},"4-9-116":{r1:40,c1:122,r2:49,c2:122},"4-9-93":{r1:45,c1:99,r2:54,c2:99},"4-9-94":{r1:45,c1:100,r2:54,c2:100},"4-9-95":{r1:44,c1:101,r2:53,c2:101},"4-9-96":{r1:44,c1:102,r2:53,c2:102},"4-9-97":{r1:44,c1:103,r2:53,c2:103},"4-9-98":{r1:43,c1:104,r2:62,c2:104},"4-9-99":{r1:43,c1:105,r2:62,c2:105}}
+    // STS2: not populated yet — send that workbook and I'll extract it the same way.
+  };
+
+  // Builds { tableNo: { categoryName: status } } from a snapshot, so the
+  // map can look up either one category's status or the worst across all
+  // of them for a given table.
+  function buildTableStatusIndex(record){
+    var index = {};
+    record.categories.forEach(function(c){
+      c.items.forEach(function(it){
+        if (!index[it.location]) index[it.location] = {};
+        index[it.location][c.name] = it.status;
+      });
+    });
+    return index;
+  }
+  function worstStatus(byCategoryStatus){
+    var statuses = Object.keys(byCategoryStatus).map(function(k){ return byCategoryStatus[k]; });
+    if (!statuses.length) return null;
+    if (statuses.indexOf('awaiting_construction') !== -1) return 'awaiting_construction';
+    if (statuses.indexOf('awaiting_quality') !== -1) return 'awaiting_quality';
+    return 'pass';
+  }
+  var STATUS_MAP_COLOR = { awaiting_construction: 'var(--awaiting)', awaiting_quality: 'var(--pending)', pass: 'var(--done)' };
+
+  function renderSiteMapSvg(record, categoryFilter){
+    var geometry = SITE_MAP_GEOMETRY[record.site];
+    if (!geometry) return null; // no geometry extracted for this site yet
+
+    var index = buildTableStatusIndex(record);
+    var tableNos = Object.keys(geometry);
+    var matched = tableNos.filter(function(t){ return !!index[t]; });
+    if (!matched.length) return null; // this data doesn't reference this site's known tables at all
+
+    var unitW = 9, unitH = 5;
+    var maxCol = 0, maxRow = 0;
+    tableNos.forEach(function(t){
+      var g = geometry[t];
+      if (g.c2 > maxCol) maxCol = g.c2;
+      if (g.r2 > maxRow) maxRow = g.r2;
+    });
+    var vbW = (maxCol + 3) * unitW, vbH = (maxRow + 3) * unitH;
+
+    var rects = matched.map(function(t){
+      var g = geometry[t];
+      var byCat = index[t];
+      var status = categoryFilter ? byCat[categoryFilter] : worstStatus(byCat);
+      var fill = status ? STATUS_MAP_COLOR[status] : '#D7DFDC';
+      var x = g.c1 * unitW;
+      var y = g.r1 * unitH;
+      var w = Math.max(unitW - 1.5, 2);
+      var h = Math.max((g.r2 - g.r1 + 1) * unitH - 1.5, 2);
+      var title = t + (status ? ' — ' + statusLabel(status) : ' — no data') +
+        (categoryFilter ? '' : ('\n' + Object.keys(byCat).map(function(k){ return k + ': ' + statusLabel(byCat[k]); }).join('\n')));
+      return '<rect class="sitemap-rect" data-table="' + escapeHtml(t) + '" x="' + x + '" y="' + y + '" width="' + w + '" height="' + h + '" rx="1" fill="' + fill + '"><title>' + escapeHtml(title) + '</title></rect>';
+    }).join('');
+
+    return '<svg class="sitemap-svg" viewBox="0 0 ' + vbW + ' ' + vbH + '" width="' + vbW + '" height="' + vbH + '">' + rects + '</svg>';
+  }
+
   // ---------- parsing: rework workbook (every sheet, every tab) ----------
-  // Sheets in these exports have a title row, an off-to-the-side Status
-  // legend (0=Pending, 1=Rework Done), then the real header row — which
-  // isn't at a fixed row/column index and varies sheet to sheet. So the
-  // header row is *found* by content (a cell matching "Location" and
-  // another matching "Status" in the same row) rather than assumed.
+  // Supports two source formats, auto-detected per sheet by scanning for
+  // whichever header signature is found first:
+  //  - "simple": a Location + Status pair (the original rework list —
+  //    one row per individual item, binary done/not-done).
+  //  - "qc": a "Table No" + "Passed" pair (the richer QC Status & Maps
+  //    format — one row per physical Table, with five status columns
+  //    (M-NCR / Passed / S-NCR / Fixed / Not Complete) and a block of
+  //    category-specific defect-count columns in between "Fixed" and
+  //    "Not Complete"). Sheets matching neither (dashboards, legends,
+  //    the pile load-testing sheet, which has no pass/fail columns at
+  //    all) are simply skipped, same as an empty sheet.
+  function detectSheetFormat(aoa){
+    for (var i = 0; i < aoa.length; i++){
+      var row = aoa[i];
+      var hasLocation = row.some(function(c){ return c != null && /^location/i.test(String(c).trim()); });
+      var hasStatus = row.some(function(c){ return c != null && /^status/i.test(String(c).trim()); });
+      if (hasLocation && hasStatus) return { idx: i, format: 'simple' };
+      var hasTableNo = row.some(function(c){ return c != null && /^table\s*no\.?$/i.test(String(c).trim()); });
+      var hasPassed = row.some(function(c){ return c != null && /^passed$/i.test(String(c).trim()); });
+      if (hasTableNo && hasPassed) return { idx: i, format: 'qc' };
+    }
+    return null;
+  }
+
+  function findColIn(header, re){
+    for (var c = 0; c < header.length; c++){
+      if (header[c] != null && re.test(String(header[c]).trim())) return c;
+    }
+    return -1;
+  }
+
+  function parseSimpleSheet(aoa, headerRowIdx){
+    var header = aoa[headerRowIdx];
+    var snoCol = findColIn(header, /^s\.?\s*no\.?$/i);
+    var combinedCol = findColIn(header, /pile.*(location|rail)|(location|rail).*pile/i);
+    var locationCol = findColIn(header, /^location/i);
+    var pileCol = combinedCol === -1 ? findColIn(header, /^pile$/i) : -1;
+    var problemCol = findColIn(header, /^problem/i);
+    var statusCol = findColIn(header, /^status/i);
+
+    var items = [];
+    for (var r = headerRowIdx + 1; r < aoa.length; r++){
+      var row = aoa[r];
+      if (!row) continue;
+      var location = locationCol >= 0 ? row[locationCol] : null;
+      var problem = problemCol >= 0 ? row[problemCol] : null;
+      if (location == null && problem == null) continue;
+      var pileVal = combinedCol >= 0 ? row[combinedCol] : (pileCol >= 0 ? row[pileCol] : null);
+      var statusRaw = statusCol >= 0 ? row[statusCol] : null;
+      var status = (statusRaw === 1 || statusRaw === '1') ? 'pass' : 'awaiting_construction';
+      items.push({
+        sno: snoCol >= 0 && row[snoCol] != null ? row[snoCol] : null,
+        location: location != null ? String(location).trim() : '',
+        pile: pileVal != null ? String(pileVal).trim() : '',
+        problem: problem != null ? String(problem).trim() : '(unspecified)',
+        status: status,
+        history: []
+      });
+    }
+    return items;
+  }
+
+  function parseQcMapSheet(aoa, headerRowIdx){
+    var header = aoa[headerRowIdx];
+    var tableNoCol = findColIn(header, /^table\s*no\.?$/i);
+    var mncrCol = findColIn(header, /^m-ncr$/i);
+    var passedCol = findColIn(header, /^passed$/i);
+    var sncrCol = findColIn(header, /^s-ncr$/i);
+    var fixedCol = findColIn(header, /^fixed$/i);
+    var notCompleteCol = findColIn(header, /^not complete$/i);
+    var commentsCol = findColIn(header, /^comments$/i);
+    var locationCol = findColIn(header, /^location$/i);
+
+    // Defect-type columns vary per category (Module Rails vs. BHAs vs.
+    // Torque Tubes all have entirely different lists) — rather than
+    // naming them, take whatever sits between "Fixed" and "Not Complete",
+    // which is where every sheet in this format puts them.
+    var defectCols = [];
+    if (fixedCol >= 0 && notCompleteCol > fixedCol){
+      for (var c = fixedCol + 1; c < notCompleteCol; c++){
+        if (header[c] != null) defectCols.push({ idx: c, name: String(header[c]).trim() });
+      }
+    }
+
+    var items = [];
+    for (var r = headerRowIdx + 1; r < aoa.length; r++){
+      var row = aoa[r];
+      if (!row) continue;
+      var tableNo = tableNoCol >= 0 ? row[tableNoCol] : null;
+      if (tableNo == null || String(tableNo).trim() === '') continue;
+
+      var mncr = mncrCol >= 0 ? row[mncrCol] : null;
+      var passed = passedCol >= 0 ? row[passedCol] : null;
+      var sncr = sncrCol >= 0 ? row[sncrCol] : null;
+      var fixed = fixedCol >= 0 ? row[fixedCol] : null;
+      var notComplete = notCompleteCol >= 0 ? row[notCompleteCol] : null;
+
+      // Fixed counts as fully Pass (remediation is treated as the final
+      // step); M-NCR/S-NCR still need work; anything else defaults to
+      // Awaiting Construction, including rows with nothing marked yet.
+      var status;
+      if (passed || fixed) status = 'pass';
+      else if (mncr || sncr) status = 'awaiting_quality';
+      else status = 'awaiting_construction';
+
+      var defectParts = [];
+      defectCols.forEach(function(dc){
+        var v = row[dc.idx];
+        if (typeof v === 'number' && v > 0) defectParts.push(dc.name + ' (' + v + ')');
+        else if (v != null && v !== '' && typeof v !== 'number') defectParts.push(dc.name);
+      });
+      var comments = commentsCol >= 0 && row[commentsCol] != null ? String(row[commentsCol]).trim() : '';
+      var problemParts = defectParts.slice();
+      if (!problemParts.length){
+        if (mncr) problemParts.push('Major NCR (unspecified)');
+        else if (sncr) problemParts.push('Minor NCR (unspecified)');
+        else if (fixed) problemParts.push('Fixed (unspecified)');
+        else if (notComplete) problemParts.push('Not complete');
+      }
+      if (comments) problemParts.push(comments);
+      var problem = problemParts.length ? problemParts.join(', ') : '(no issues recorded)';
+
+      var locationVal = locationCol >= 0 && row[locationCol] != null ? String(row[locationCol]).trim() : '';
+
+      items.push({
+        sno: null,
+        location: String(tableNo).trim(),
+        pile: locationVal,
+        problem: problem,
+        status: status,
+        history: []
+      });
+    }
+    return items;
+  }
+
+  // Sheet names in these workbooks carry their site as a prefix ("STS1
+  // Piling", "STS1 BHAs", ...) — detecting it here means the upload flow
+  // doesn't need the user to manually say which site a file belongs to.
+  function detectSiteFromSheetNames(sheetNames){
+    var counts = {};
+    sheetNames.forEach(function(name){
+      var m = String(name).match(/\bSTS\s?(\d+)\b/i);
+      if (m){
+        var site = 'STS' + m[1];
+        counts[site] = (counts[site] || 0) + 1;
+      }
+    });
+    var best = null, bestCount = 0;
+    Object.keys(counts).forEach(function(site){
+      if (counts[site] > bestCount){ best = site; bestCount = counts[site]; }
+    });
+    return best; // null if no sheet name carries a recognizable site prefix
+  }
+
   async function parseReworkWorkbook(file){
     if (!window.XLSX) throw new Error('The spreadsheet reading library failed to load. Check your connection and try again.');
     var buf = await file.arrayBuffer();
@@ -979,59 +1281,22 @@
 
     wb.SheetNames.forEach(function(sheetName){
       var aoa = XLSX.utils.sheet_to_json(wb.Sheets[sheetName], { header: 1, defval: null });
-
-      var headerRowIdx = -1;
-      for (var i = 0; i < aoa.length; i++){
-        var row = aoa[i];
-        var hasLocation = row.some(function(c){ return c != null && /^location/i.test(String(c).trim()); });
-        var hasStatus = row.some(function(c){ return c != null && /^status/i.test(String(c).trim()); });
-        if (hasLocation && hasStatus){ headerRowIdx = i; break; }
-      }
-      if (headerRowIdx === -1){
+      var detected = detectSheetFormat(aoa);
+      if (!detected){
         categories.push({ name: formatCategoryName(sheetName), items: [] });
         return;
       }
-
-      var header = aoa[headerRowIdx];
-      function findCol(re){
-        for (var c = 0; c < header.length; c++){
-          if (header[c] != null && re.test(String(header[c]).trim())) return c;
-        }
-        return -1;
-      }
-      var snoCol = findCol(/^s\.?\s*no\.?$/i);
-      var combinedCol = findCol(/pile.*(location|rail)|(location|rail).*pile/i);
-      var locationCol = findCol(/^location/i);
-      var pileCol = combinedCol === -1 ? findCol(/^pile$/i) : -1;
-      var problemCol = findCol(/^problem/i);
-      var statusCol = findCol(/^status/i);
-
-      var items = [];
-      for (var r = headerRowIdx + 1; r < aoa.length; r++){
-        var row = aoa[r];
-        if (!row) continue;
-        var location = locationCol >= 0 ? row[locationCol] : null;
-        var problem = problemCol >= 0 ? row[problemCol] : null;
-        if (location == null && problem == null) continue;
-        var pileVal = combinedCol >= 0 ? row[combinedCol] : (pileCol >= 0 ? row[pileCol] : null);
-        var statusRaw = statusCol >= 0 ? row[statusCol] : null;
-        var status = (statusRaw === 1 || statusRaw === '1') ? 'pass' : 'awaiting_construction';
-        items.push({
-          sno: snoCol >= 0 && row[snoCol] != null ? row[snoCol] : null,
-          location: location != null ? String(location).trim() : '',
-          pile: pileVal != null ? String(pileVal).trim() : '',
-          problem: problem != null ? String(problem).trim() : '(unspecified)',
-          status: status,
-          history: []
-        });
-      }
+      var items = detected.format === 'qc'
+        ? parseQcMapSheet(aoa, detected.idx)
+        : parseSimpleSheet(aoa, detected.idx);
       categories.push({ name: formatCategoryName(sheetName), items: items });
     });
 
     recomputeTotals({ categories: categories });
     var grandTotal = 0, grandPass = 0;
     categories.forEach(function(c){ grandTotal += c.total; grandPass += c.pass; });
-    return { categories: categories, grandTotal: grandTotal, grandPass: grandPass };
+    var site = detectSiteFromSheetNames(wb.SheetNames);
+    return { categories: categories, grandTotal: grandTotal, grandPass: grandPass, site: site };
   }
 
   // Mutates a { categories: [...] } record in place, filling in per-category
@@ -1065,18 +1330,24 @@
       if (parsed.grandTotal === 0){
         throw new Error('No Location/Status rows found — check the sheet headers match "Location" and "Status".');
       }
+      // Sheet names carry the site prefix (STS1, STS2, ...) for the QC
+      // format; the original simple format has no such prefix, so it
+      // falls back to STS1 to stay compatible with data uploaded before
+      // multiple sites existed.
+      var site = parsed.site || 'STS1';
 
-      var key = 'rework:' + entry.date;
+      var key = 'rework:' + site + ':' + entry.date;
       var existing = await storeGetShared(key);
       if (existing && existing.value && !overwrite){
         entry.status = 'skip';
-        entry.message = 'A snapshot for this date already exists';
+        entry.message = 'A ' + site + ' snapshot for this date already exists';
         updateRowStatus(entry);
         return { skipped: true };
       }
 
       var record = recomputeTotals({
         date: entry.date,
+        site: site,
         source: entry.file.name,
         categories: parsed.categories,
         uploadedAt: new Date().toISOString()
@@ -1085,9 +1356,9 @@
       if (!saveRes) throw new Error('Could not save this snapshot.');
 
       entry.status = 'saved';
-      entry.message = parsed.grandPass + '/' + parsed.grandTotal + ' passed';
+      entry.message = site + ' · ' + parsed.grandPass + '/' + parsed.grandTotal + ' passed';
       updateRowStatus(entry);
-      return { ok: true, date: entry.date };
+      return { ok: true, date: entry.date, site: site };
     } catch(err){
       entry.status = 'error';
       entry.message = err && err.message ? err.message : String(err);
@@ -1102,15 +1373,20 @@
     processBtn.disabled = true;
     isProcessing = true;
     var overwrite = overwriteCheckbox.checked;
-    var saved = 0, skipped = 0, failed = 0, lastDate = null;
+    var saved = 0, skipped = 0, failed = 0, lastDate = null, lastSite = null;
     for (var i = 0; i < selectedFiles.length; i++){
       setStatus('Processing ' + (i + 1) + ' of ' + selectedFiles.length + '…');
       var res = await processEntry(selectedFiles[i], overwrite);
-      if (res.ok){ saved++; lastDate = res.date; }
+      if (res.ok){ saved++; lastDate = res.date; lastSite = res.site; }
       else if (res.skipped) skipped++;
       else failed++;
     }
     setStatus('');
+    if (lastSite && lastSite !== currentSite){
+      currentSite = lastSite;
+      storeSet('ui:current_site', lastSite);
+    }
+    await renderSiteTabs();
     await refreshHistory();
     if (lastDate) await renderDashboard(lastDate);
     summaryBanner.textContent = saved + ' snapshot' + (saved === 1 ? '' : 's') + ' saved' +
@@ -1123,7 +1399,7 @@
 
   // ---------- history ----------
   async function loadAllSnapshots(){
-    var listRes = await storeListShared('rework:');
+    var listRes = await storeListShared('rework:' + currentSite + ':');
     var keys = listRes ? listRes.keys : [];
     var records = [];
     for (var i = 0; i < keys.length; i++){
@@ -1131,6 +1407,21 @@
       if (r && r.value){ try { records.push(JSON.parse(r.value)); } catch(e){} }
     }
     records.sort(function(a, b){ return a.date.localeCompare(b.date); });
+    return records;
+  }
+
+  // Used by backup export/import and Cloud Sync, which operate on the
+  // whole dataset — every site — rather than just whichever one is
+  // currently selected in the tabs.
+  async function loadAllSnapshotsAllSites(){
+    var listRes = await storeListShared('rework:');
+    var keys = listRes ? listRes.keys : [];
+    var records = [];
+    for (var i = 0; i < keys.length; i++){
+      var r = await storeGetShared(keys[i]);
+      if (r && r.value){ try { records.push(JSON.parse(r.value)); } catch(e){} }
+    }
+    records.sort(function(a, b){ return (a.site || '').localeCompare(b.site || '') || a.date.localeCompare(b.date); });
     return records;
   }
 
@@ -1147,7 +1438,7 @@
         '<td>' + r.grandTotal + '</td>' +
         '<td>' + pct + '%</td>' +
         '<td>' + r.grandOpen + '</td>' +
-        '<td class="actions"><button data-del="' + r.date + '">Delete</button></td>' +
+        '<td class="actions"><button data-del="' + r.date + '">Delete</button> <button data-del-cloud="' + r.date + '">Delete from Cloud</button></td>' +
         '</tr>';
     }).join('');
     historyBody.innerHTML = '<table class="hist"><thead><tr><th>Date</th><th>Total Items</th><th>Pass</th><th>Open</th><th></th></tr></thead><tbody>' + rowsHtml + '</tbody></table>';
@@ -1162,17 +1453,45 @@
       btn.addEventListener('click', async function(e){
         e.stopPropagation();
         var date = btn.getAttribute('data-del');
-        if (!confirm('Delete the snapshot for ' + date + '? This cannot be undone.')) return;
-        await storeDeleteShared('rework:' + date);
+        if (!confirm('Delete the ' + currentSite + ' snapshot for ' + date + '? This cannot be undone.')) return;
+        await storeDeleteShared('rework:' + currentSite + ':' + date);
         await refreshHistory();
         dashboardMount.innerHTML = '<div class="placeholder">Upload a rework list above to see the status dashboard.</div>';
+      });
+    });
+    historyBody.querySelectorAll('button[data-del-cloud]').forEach(function(btn){
+      btn.addEventListener('click', async function(e){
+        e.stopPropagation();
+        var date = btn.getAttribute('data-del-cloud');
+        var apiKey = jsonbinKeyInput ? jsonbinKeyInput.value.trim() : '';
+        var binId = jsonbinBinIdInput ? jsonbinBinIdInput.value.trim() : '';
+        if (!apiKey || !binId){
+          alert('Cloud Sync isn\u2019t configured \u2014 set an API key and Bin ID in the Cloud Sync section first.');
+          return;
+        }
+        if (!confirm('Delete the ' + currentSite + ' snapshot for ' + date + ' from the cloud? This affects everyone using this bin and cannot be undone. (This only removes it from the cloud \u2014 your local copy, if any, stays put.)')) return;
+        btn.disabled = true;
+        btn.textContent = 'Deleting…';
+        try {
+          var existing = await fetchCloudRecord(apiKey, binId);
+          if (!existing || !Array.isArray(existing.snapshots)){
+            throw new Error('Could not find cloud data to update.');
+          }
+          existing.snapshots = existing.snapshots.filter(function(s){ return !(s.date === date && (s.site || 'STS1') === currentSite); });
+          await jsonbinRequest('PUT', JSONBIN_BASE + '/' + binId, apiKey, existing);
+          alert('Deleted ' + currentSite + ' ' + date + ' from the cloud.');
+        } catch(err){
+          alert('Could not delete from cloud: ' + (err && err.message ? err.message : String(err)));
+          btn.disabled = false;
+          btn.textContent = 'Delete from Cloud';
+        }
       });
     });
   }
 
   clearAllBtn.addEventListener('click', async function(){
-    if (!confirm('Clear ALL stored snapshots? This cannot be undone.')) return;
-    var listRes = await storeListShared('rework:');
+    if (!confirm('Clear ALL stored ' + currentSite + ' snapshots? This cannot be undone. (Other sites are not affected.)')) return;
+    var listRes = await storeListShared('rework:' + currentSite + ':');
     var keys = listRes ? listRes.keys : [];
     for (var i = 0; i < keys.length; i++) await storeDeleteShared(keys[i]);
     await refreshHistory();
@@ -1215,17 +1534,28 @@
   });
 
   async function buildBackupPayload(){
-    var snapshots = await loadAllSnapshots();
+    var snapshots = await loadAllSnapshotsAllSites();
     return { exportedFrom: 'Rework Tracker', exportedAt: new Date().toISOString(), snapshots: snapshots };
   }
 
   async function applyImportedSnapshots(snapshots){
+    var sitesTouched = {};
     for (var i = 0; i < snapshots.length; i++){
       var snap = snapshots[i];
       if (snap && snap.date){
-        await storeSetShared('rework:' + snap.date, JSON.stringify(recomputeTotals(snap)));
+        var site = snap.site || 'STS1'; // backups made before multi-site support default to STS1
+        snap.site = site;
+        sitesTouched[site] = true;
+        await storeSetShared('rework:' + site + ':' + snap.date, JSON.stringify(recomputeTotals(snap)));
       }
     }
+    // If the currently-selected site had nothing in this import but
+    // another site did, switch there rather than leaving the dashboard
+    // looking like the import did nothing.
+    if (Object.keys(sitesTouched).length && !sitesTouched[currentSite]){
+      currentSite = Object.keys(sitesTouched)[0];
+    }
+    await renderSiteTabs();
     await refreshHistory();
     var restored = await loadAllSnapshots();
     if (restored.length) await renderDashboard(restored[restored.length - 1].date);
@@ -1241,9 +1571,9 @@
       if (!payload || !Array.isArray(payload.snapshots)){
         throw new Error('This file doesn\u2019t look like a Rework Tracker backup (no snapshots array found).');
       }
-      var existing = await loadAllSnapshots();
+      var existing = await loadAllSnapshotsAllSites();
       var msg = 'Import ' + payload.snapshots.length + ' snapshot' + (payload.snapshots.length === 1 ? '' : 's') +
-        (existing.length ? ' — this will overwrite any dates that already exist' : '') + '. Continue?';
+        (existing.length ? ' — this will overwrite any site+date combinations that already exist' : '') + '. Continue?';
       if (!confirm(msg)) return;
 
       await applyImportedSnapshots(payload.snapshots);
@@ -1373,9 +1703,9 @@
       if (!payload || !Array.isArray(payload.snapshots)){
         throw new Error('This bin doesn\u2019t look like Rework Tracker data (no snapshots array found).');
       }
-      var existing = await loadAllSnapshots();
+      var existing = await loadAllSnapshotsAllSites();
       var msg = 'Load ' + payload.snapshots.length + ' snapshot' + (payload.snapshots.length === 1 ? '' : 's') + ' from the cloud' +
-        (existing.length ? ' — this will overwrite any dates that already exist locally' : '') + '. Continue?';
+        (existing.length ? ' — this will overwrite any site+date combinations that already exist locally' : '') + '. Continue?';
       if (!confirm(msg)) return;
 
       await applyImportedSnapshots(payload.snapshots);
@@ -1385,6 +1715,35 @@
     } finally {
       cloudLoadBtn.disabled = false;
       cloudLoadBtn.textContent = 'Load from Cloud';
+    }
+  });
+
+  var clearCloudBtn = document.getElementById('clearCloudBtn');
+  clearCloudBtn.addEventListener('click', async function(){
+    var apiKey = jsonbinKeyInput.value.trim();
+    var binId = jsonbinBinIdInput.value.trim();
+    if (!apiKey || !binId){
+      showCloudResult('Need both an API key and a Bin ID to clear.');
+      return;
+    }
+    if (!confirm('Clear all snapshot data in cloud bin ' + binId + '? This affects everyone using this bin and cannot be undone. The bin itself and your credentials stay valid — only the data is wiped.')) return;
+
+    clearCloudBtn.disabled = true;
+    clearCloudBtn.textContent = 'Clearing…';
+    showCloudResult('Clearing cloud data…');
+    try {
+      // Preserve the approved-emails list — clearing snapshots shouldn't
+      // also silently lock everyone out of the access gate.
+      var existing = await fetchCloudRecord(apiKey, binId).catch(function(){ return null; });
+      var payload = { exportedFrom: 'Rework Tracker', exportedAt: new Date().toISOString(), snapshots: [] };
+      if (existing && Array.isArray(existing.approvedEmails)) payload.approvedEmails = existing.approvedEmails;
+      await jsonbinRequest('PUT', JSONBIN_BASE + '/' + binId, apiKey, payload);
+      showCloudResult('Cloud data cleared. The Bin ID and API key are still valid \u2014 "Save to Cloud" will start fresh from here.');
+    } catch(err){
+      showCloudResult('<strong>Clear failed:</strong> ' + escapeHtml(err && err.message ? err.message : String(err)));
+    } finally {
+      clearCloudBtn.disabled = false;
+      clearCloudBtn.textContent = 'Clear Cloud Data';
     }
   });
 
@@ -1547,7 +1906,8 @@
   var currentRecord = null;   // the snapshot currently on screen — mutated directly on status edits
   var currentAllItems = [];   // flattened items for the searchable table, carries catIdx/itemIdx back to currentRecord
   var lastDashboardDate = null;
-  var itemFilterState = { text: '', category: '', location: '', pile: '', problem: '', showAll: false };
+  var itemFilterState = { text: '', category: '', location: '', pile: '', problem: '', status: '', showAll: false };
+  var siteMapCategory = '';
 
   function statusSelectHtml(catIdx, itemIdx, status){
     var opts = STATUS_STAGES.map(function(s){
@@ -1561,7 +1921,11 @@
     var loc = itemFilterState.location.toLowerCase();
     var pile = itemFilterState.pile.toLowerCase();
     return items.filter(function(it){
-      if (!itemFilterState.showAll && it.status === 'pass') return false;
+      // "Show passed items too" hides Pass by default — but if the Status
+      // filter is explicitly set to Pass, that's a clearer signal to show
+      // it than the checkbox is to hide it.
+      if (!itemFilterState.showAll && it.status === 'pass' && itemFilterState.status !== 'pass') return false;
+      if (itemFilterState.status && it.status !== itemFilterState.status) return false;
       if (itemFilterState.category && it.category !== itemFilterState.category) return false;
       if (itemFilterState.problem && it.problem !== itemFilterState.problem) return false;
       if (loc && it.location.toLowerCase().indexOf(loc) === -1) return false;
@@ -1592,6 +1956,9 @@
     var probOptHtml = '<option value="">All Problems</option>' + problemOptions.map(function(p){
       return '<option value="' + escapeHtml(p) + '"' + (p === itemFilterState.problem ? ' selected' : '') + '>' + escapeHtml(p) + '</option>';
     }).join('');
+    var statusOptHtml = '<option value="">All Statuses</option>' + STATUS_STAGES.map(function(s){
+      return '<option value="' + s.value + '"' + (s.value === itemFilterState.status ? ' selected' : '') + '>' + s.label + '</option>';
+    }).join('');
 
     // Filters live in their own responsive grid, not table cells — a row
     // of table-cell dropdowns has no good way to reflow on a phone, a
@@ -1600,10 +1967,12 @@
       '<div class="filter-field"><label>Category</label><select id="colFilterCategory">' + catOptHtml + '</select></div>' +
       '<div class="filter-field"><label>Location</label><input type="text" id="colFilterLocation" placeholder="Filter…" value="' + escapeHtml(itemFilterState.location) + '"></div>' +
       '<div class="filter-field"><label>Pile</label><input type="text" id="colFilterPile" placeholder="Filter…" value="' + escapeHtml(itemFilterState.pile) + '"></div>' +
-      '<div class="filter-field"><label>Problem</label><select id="colFilterProblem">' + probOptHtml + '</select></div>';
+      '<div class="filter-field"><label>Problem</label><select id="colFilterProblem">' + probOptHtml + '</select></div>' +
+      '<div class="filter-field"><label>Status</label><select id="colFilterStatus">' + statusOptHtml + '</select></div>';
 
     document.getElementById('colFilterCategory').addEventListener('change', function(e){ itemFilterState.category = e.target.value; renderTableBody(); });
     document.getElementById('colFilterProblem').addEventListener('change', function(e){ itemFilterState.problem = e.target.value; renderTableBody(); });
+    document.getElementById('colFilterStatus').addEventListener('change', function(e){ itemFilterState.status = e.target.value; renderTableBody(); });
     document.getElementById('colFilterLocation').addEventListener('input', function(e){ itemFilterState.location = e.target.value; renderTableBody(); });
     document.getElementById('colFilterPile').addEventListener('input', function(e){ itemFilterState.pile = e.target.value; renderTableBody(); });
 
@@ -1660,7 +2029,7 @@
     item.history.push({ from: oldStatus, to: newStatus, by: currentUserName(), at: new Date().toISOString() });
     item.status = newStatus;
     recomputeTotals(currentRecord);
-    await storeSetShared('rework:' + currentRecord.date, JSON.stringify(currentRecord));
+    await storeSetShared('rework:' + (currentRecord.site || currentSite) + ':' + currentRecord.date, JSON.stringify(currentRecord));
 
     var historyToggle = document.getElementById('historyToggle');
     var preservedHistory = historyToggle ? historyToggle.checked : false;
@@ -1677,7 +2046,8 @@
     var prior = idx > 0 ? records[idx - 1] : null;
     currentRecord = current;
     if (date !== lastDashboardDate){
-      itemFilterState = { text: '', category: '', location: '', pile: '', problem: '', showAll: false };
+      itemFilterState = { text: '', category: '', location: '', pile: '', problem: '', status: '', showAll: false };
+      siteMapCategory = '';
       lastDashboardDate = date;
     }
 
@@ -1708,6 +2078,11 @@
           '<div class="bar-seg pass" style="width:' + wP + '%;"></div>' +
         '</div>' +
       '</div>';
+    }).join('');
+
+    var siteMapSvg = renderSiteMapSvg(current, siteMapCategory);
+    var siteMapOptions = '<option value="">All Categories (Worst Status)</option>' + current.categories.map(function(c){
+      return '<option value="' + escapeHtml(c.name) + '"' + (c.name === siteMapCategory ? ' selected' : '') + '>' + escapeHtml(c.name) + '</option>';
     }).join('');
 
     // Problem breakdown across everything not yet "pass"
@@ -1760,6 +2135,16 @@
         '<div class="cat-grid">' + catGridHtml + '</div></div>' +
       '<div class="trend-section"><h4>Trend</h4><p class="section-sub">Pass % across snapshots</p>' + svgTrendPct(records) + '</div>' +
       '<div class="problem-section"><h4>Top Open Issues</h4><p class="section-sub">Most common problem types not yet passed</p>' + problemHtml + '</div>' +
+      '<div class="sitemap-section">' +
+        '<div class="sitemap-header">' +
+          '<div><h4 style="margin:0;">Site Map</h4><p class="section-sub" style="margin:2px 0 0;">Colored by ' + (siteMapCategory ? escapeHtml(siteMapCategory) + ' status' : 'worst status across all categories') + ' — tap a table to see its issues below. On a phone, scroll or pinch to move around the map.</p></div>' +
+          '<select id="siteMapCategorySelect">' + siteMapOptions + '</select>' +
+        '</div>' +
+        (siteMapSvg
+          ? '<div class="status-legend" style="margin-bottom:10px;"><span><i class="awaiting-construction"></i>Awaiting Construction</span><span><i class="awaiting-quality"></i>Awaiting Quality</span><span><i class="pass"></i>Pass</span></div>' +
+            '<div class="sitemap-wrap">' + siteMapSvg + '</div>'
+          : '<p class="sitemap-empty">No map geometry on file for ' + escapeHtml(current.site || 'this site') + ' yet \u2014 upload that site\u2019s workbook to me and I can extract it the same way I did for STS1.</p>') +
+      '</div>' +
       '<div class="pending-section">' +
         '<h4>Item List</h4><p class="section-sub">Search across all categories — change status directly in the dropdown</p>' +
         '<div class="pending-controls">' +
@@ -1797,6 +2182,30 @@
       if (historyToggle.checked) renderChangeLog(current);
     });
     document.getElementById('exportExcelBtn').addEventListener('click', function(){ exportSnapshotToExcel(current, records); });
+    var siteMapSelect = document.getElementById('siteMapCategorySelect');
+    if (siteMapSelect){
+      siteMapSelect.addEventListener('change', function(){
+        siteMapCategory = siteMapSelect.value;
+        renderDashboard(currentRecord.date, historyToggle.checked);
+      });
+    }
+    dashboardMount.querySelectorAll('.sitemap-rect').forEach(function(rect){
+      rect.addEventListener('click', function(){
+        var tableNo = rect.getAttribute('data-table');
+        itemFilterState.category = '';
+        itemFilterState.problem = '';
+        itemFilterState.status = '';
+        itemFilterState.location = tableNo;
+        itemFilterState.pile = '';
+        itemFilterState.text = '';
+        itemFilterState.showAll = true; // show the full picture for this table, not just what's still open
+        filterInput.value = '';
+        showAllToggle.checked = true;
+        renderPendingTable();
+        var target = document.querySelector('.pending-section');
+        if (target) target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      });
+    });
   }
 
   // Flat, most-recent-first audit log of every status change recorded
@@ -1908,9 +2317,14 @@
     }
   }
 
-  initGates();
-  refreshHistory();
-  checkReportNudge();
+  (async function initSite(){
+    var saved = await storeGet('ui:current_site');
+    if (saved && saved.value) currentSite = saved.value; // works for both the default four and any auto-discovered site
+    await renderSiteTabs();
+    initGates();
+    refreshHistory();
+    checkReportNudge();
+  })();
 })();
 </script>
 </body>
