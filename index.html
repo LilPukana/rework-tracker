@@ -1907,7 +1907,6 @@
   var currentAllItems = [];   // flattened items for the searchable table, carries catIdx/itemIdx back to currentRecord
   var lastDashboardDate = null;
   var itemFilterState = { text: '', category: '', location: '', pile: '', problem: '', status: '', showAll: false };
-  var siteMapCategory = '';
 
   function statusSelectHtml(catIdx, itemIdx, status){
     var opts = STATUS_STAGES.map(function(s){
@@ -1970,7 +1969,11 @@
       '<div class="filter-field"><label>Problem</label><select id="colFilterProblem">' + probOptHtml + '</select></div>' +
       '<div class="filter-field"><label>Status</label><select id="colFilterStatus">' + statusOptHtml + '</select></div>';
 
-    document.getElementById('colFilterCategory').addEventListener('change', function(e){ itemFilterState.category = e.target.value; renderTableBody(); });
+    document.getElementById('colFilterCategory').addEventListener('change', function(e){
+      itemFilterState.category = e.target.value;
+      var ht = document.getElementById('historyToggle');
+      renderDashboard(currentRecord.date, ht ? ht.checked : false);
+    });
     document.getElementById('colFilterProblem').addEventListener('change', function(e){ itemFilterState.problem = e.target.value; renderTableBody(); });
     document.getElementById('colFilterStatus').addEventListener('change', function(e){ itemFilterState.status = e.target.value; renderTableBody(); });
     document.getElementById('colFilterLocation').addEventListener('input', function(e){ itemFilterState.location = e.target.value; renderTableBody(); });
@@ -2047,7 +2050,6 @@
     currentRecord = current;
     if (date !== lastDashboardDate){
       itemFilterState = { text: '', category: '', location: '', pile: '', problem: '', status: '', showAll: false };
-      siteMapCategory = '';
       lastDashboardDate = date;
     }
 
@@ -2080,9 +2082,9 @@
       '</div>';
     }).join('');
 
-    var siteMapSvg = renderSiteMapSvg(current, siteMapCategory);
+    var siteMapSvg = renderSiteMapSvg(current, itemFilterState.category);
     var siteMapOptions = '<option value="">All Categories (Worst Status)</option>' + current.categories.map(function(c){
-      return '<option value="' + escapeHtml(c.name) + '"' + (c.name === siteMapCategory ? ' selected' : '') + '>' + escapeHtml(c.name) + '</option>';
+      return '<option value="' + escapeHtml(c.name) + '"' + (c.name === itemFilterState.category ? ' selected' : '') + '>' + escapeHtml(c.name) + '</option>';
     }).join('');
 
     // Problem breakdown across everything not yet "pass"
@@ -2137,7 +2139,7 @@
       '<div class="problem-section"><h4>Top Open Issues</h4><p class="section-sub">Most common problem types not yet passed</p>' + problemHtml + '</div>' +
       '<div class="sitemap-section">' +
         '<div class="sitemap-header">' +
-          '<div><h4 style="margin:0;">Site Map</h4><p class="section-sub" style="margin:2px 0 0;">Colored by ' + (siteMapCategory ? escapeHtml(siteMapCategory) + ' status' : 'worst status across all categories') + ' — tap a table to see its issues below. On a phone, scroll or pinch to move around the map.</p></div>' +
+          '<div><h4 style="margin:0;">Site Map</h4><p class="section-sub" style="margin:2px 0 0;">Colored by ' + (itemFilterState.category ? escapeHtml(itemFilterState.category) + ' status' : 'worst status across all categories') + ' — tap a table to see its issues below. On a phone, scroll or pinch to move around the map.</p></div>' +
           '<select id="siteMapCategorySelect">' + siteMapOptions + '</select>' +
         '</div>' +
         (siteMapSvg
@@ -2185,7 +2187,7 @@
     var siteMapSelect = document.getElementById('siteMapCategorySelect');
     if (siteMapSelect){
       siteMapSelect.addEventListener('change', function(){
-        siteMapCategory = siteMapSelect.value;
+        itemFilterState.category = siteMapSelect.value;
         renderDashboard(currentRecord.date, historyToggle.checked);
       });
     }
