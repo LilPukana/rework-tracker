@@ -274,6 +274,22 @@
   .comment-input{ font-family:var(--font-body); font-size:12px; padding:5px 7px; border:1px solid var(--paper-line); background:#fff; width:100%; box-sizing:border-box; min-width:140px; }
   .comment-input:focus{ outline:2px solid var(--cyan); outline-offset:1px; border-color:transparent; }
   .comment-readonly{ font-family:var(--font-body); font-size:12px; color:var(--text-dim); }
+
+  .itc-overlay{ position:fixed; inset:0; background:rgba(19,48,78,.55); z-index:900; display:flex; align-items:flex-start; justify-content:center; padding:30px 16px; overflow-y:auto; }
+  .itc-modal{ background:#fff; max-width:720px; width:100%; padding:26px 28px; box-shadow:0 20px 50px -12px rgba(0,0,0,.4); }
+  .itc-modal h3{ font-family:var(--font-display); font-size:19px; text-transform:uppercase; color:var(--navy); margin:0 0 4px; }
+  .itc-modal .itc-sub{ color:var(--text-dim); font-size:13px; margin:0 0 16px; }
+  .itc-legend{ display:grid; grid-template-columns:repeat(auto-fit, minmax(200px,1fr)); gap:4px 16px; font-size:11px; color:var(--text-dim); background:#FAFBFA; border:1px solid var(--paper-line); padding:10px 14px; margin-bottom:18px; }
+  .itc-criteria-row{ display:grid; grid-template-columns:1fr 130px; gap:14px; align-items:center; padding:9px 0; border-bottom:1px solid var(--paper-line); }
+  .itc-criteria-row span{ font-family:var(--font-body); font-size:13px; }
+  .itc-criteria-row select{ font-family:var(--font-body); font-size:12.5px; padding:6px 7px; border:1px solid var(--paper-line); }
+  .itc-field{ margin-top:16px; }
+  .itc-field label{ display:block; font-family:var(--font-body); font-weight:600; font-size:11.5px; text-transform:uppercase; letter-spacing:.04em; color:var(--text-dim); margin-bottom:5px; }
+  .itc-field textarea, .itc-field input{ width:100%; box-sizing:border-box; font-family:var(--font-body); font-size:13px; padding:8px 10px; border:1px solid var(--paper-line); }
+  .itc-field textarea{ min-height:56px; resize:vertical; }
+  .itc-row-2{ display:grid; grid-template-columns:1fr 1fr; gap:14px; }
+  .itc-actions{ display:flex; justify-content:space-between; align-items:center; margin-top:22px; padding-top:16px; border-top:1px solid var(--paper-line); }
+  .itc-preview{ font-family:var(--font-mono); font-size:11px; padding:6px 10px; display:inline-block; }
   table.items tr:last-child td{ border-bottom:none; }
   .status-select{ font-family:var(--font-mono); font-size:10.5px; font-weight:600; letter-spacing:.02em; padding:4px 6px; border:1px solid transparent; cursor:pointer; }
   .status-badge-readonly{ font-family:var(--font-mono); font-size:10.5px; font-weight:600; letter-spacing:.02em; padding:4px 6px; border:1px solid transparent; display:inline-block; }
@@ -324,6 +340,12 @@
     .sitemap-svg{ width:auto; height:auto; max-height:none; }
     .sitemap-wrap{ max-height:420px; }
     .jump-to-map-btn{ bottom:24px; right:16px; padding:13px 16px; }
+    .itc-modal{ padding:20px 16px; max-height:calc(100vh - 40px); overflow-y:auto; }
+    .itc-criteria-row{ grid-template-columns:1fr; gap:6px; }
+    .itc-criteria-row select{ width:100%; font-size:16px !important; padding:9px 8px; }
+    .itc-row-2{ grid-template-columns:1fr; }
+    .itc-field textarea, .itc-field input{ font-size:16px !important; }
+    .itc-actions{ flex-direction:column-reverse; gap:10px; align-items:stretch; }
     .sitemap-section{ padding:18px 16px; }
 
     /* Every text/email/date input and select at 16px+ stops iOS Safari
@@ -425,6 +447,10 @@
 
   <div class="who-bar" id="whoBar"></div>
   <div class="access-panel" id="accessPanel" style="display:none;"></div>
+
+  <div class="itc-overlay" id="itcOverlay" style="display:none;">
+    <div class="itc-modal" id="itcModal"></div>
+  </div>
 
   <div id="storageWarning" class="banner warn"></div>
   <div id="reportNudgeBanner" class="banner nudge">
@@ -1206,6 +1232,108 @@
     return 'pass';
   }
   var STATUS_MAP_COLOR = { awaiting_construction: 'var(--awaiting)', awaiting_quality: 'var(--pending)', pass: 'var(--done)' };
+
+  // ---------- ITC checklists ----------
+  // Digital equivalents of the field team's per-table Inspection Test
+  // Certificate spreadsheets (one template per category, from their own
+  // *_ITC_MASTER.xlsx files). Matched to a category by keyword rather
+  // than exact name, since actual category names carry a site prefix
+  // ("STS2 Dampers", "STS1 BHAs", ...).
+  var ITC_TEMPLATES = {
+    Dampers: {
+      title: 'Damper ITC',
+      criteria: [
+        'Correct measurement between damper mounts (475mm +/-10mm)',
+        'Top damper mount faces away from BHA',
+        'Damper is installed with arrow up',
+        'Castle nut is tight and no play on damper',
+        'Both split pins are installed correctly',
+        'Rivet installed correctly',
+        'Rivet has zinc spray paint applied',
+        'U bolt is torqued to 24.4nm',
+        'U bolt is torque marked',
+        'No damage, dents, scrapes or gouges',
+        'All lock bolts are swaged correctly'
+      ]
+    },
+    Modules: {
+      title: 'Module ITC',
+      criteria: [
+        'All lock bolts installed',
+        'Torque marks on lock bolts',
+        'All lock bolts are tight (must have 3 threads showing)',
+        'No gaps on lock bolts',
+        'All lock bolts swaged correctly',
+        'Module gaps correct \u2014 Horizontal 22mm +/-5mm or Full Tilt 20mm +/-10mm',
+        'No damaged modules',
+        'Correct panel wattage',
+        'Correct panel orientation',
+        'No module twist',
+        'MC4 connector caps on all module leads'
+      ]
+    },
+    BHAs: {
+      title: 'BHA ITC',
+      criteria: [
+        'All lock bolts have been swaged correctly',
+        'All bearing supports straight',
+        'No gaps between BHA support and pile',
+        'No gap between BHA support and BHA hoop',
+        'BHA module rails are located in the holes in the torque tube',
+        'U bolt fasteners are torqued to 24.4nm',
+        'U bolt fasteners are torque marked',
+        'Packers are fitted in all heavy duty BHA units',
+        'BHA thermal expansion gap is even both sides +/-6mm',
+        'Bearing pin is marked both sides',
+        'All zip ties have been removed',
+        'BHA is square to torque tube vertically 6mm max or 1.5 deg',
+        'BHA is square to torque tube horizontally 6mm max or 0.5 deg',
+        'No damage, dents, scrapes or gouges',
+        'Vertical and horizontal witness marks on BHAs are aligned'
+      ]
+    },
+    'Module Rails': {
+      title: 'Module Rail ITC',
+      criteria: [
+        'Correct rail each side of slew drive',
+        'Correct end module rails',
+        'Clamp has been torqued to 17.6nm',
+        'Clamp has been torque marked',
+        'Clamp is level +/-10 deg',
+        'Module rails are level +/- 1 deg',
+        'Module rails are square to the torque tube +/- 0.5 deg',
+        'No damage, dents, scrapes or gouges'
+      ]
+    }
+  };
+  var ITC_CODES = [
+    { value: 'P', label: 'P \u2014 Complies, passed, no remediation required' },
+    { value: 'M', label: 'M \u2014 Complies, passed with minor remediation by QC' },
+    { value: 'S', label: 'S \u2014 Does not comply, needs significant remediation' },
+    { value: 'I', label: 'I \u2014 Incomplete installation' },
+    { value: 'V', label: 'V \u2014 Further validation required' }
+  ];
+
+  function getItcTemplateForCategory(categoryName){
+    var lower = String(categoryName || '').toLowerCase();
+    if (lower.indexOf('module rail') !== -1) return ITC_TEMPLATES['Module Rails'];
+    if (lower.indexOf('damper') !== -1) return ITC_TEMPLATES.Dampers;
+    if (lower.indexOf('bha') !== -1) return ITC_TEMPLATES.BHAs;
+    if (lower.indexOf('module') !== -1) return ITC_TEMPLATES.Modules;
+    return null;
+  }
+
+  // Worst-result-wins, matching the same severity order confirmed against
+  // the QC workbooks: incomplete blocks everything; a significant (S)
+  // finding still needs real rework; validation-required (V) isn't a
+  // pass yet either; P and M both count as Pass (M is a passed item with
+  // a minor note, same convention as M-NCR in the QC Status workbook).
+  function itcOverallStatus(codes){
+    if (codes.indexOf('I') !== -1) return 'awaiting_construction';
+    if (codes.indexOf('S') !== -1) return 'awaiting_quality';
+    if (codes.indexOf('V') !== -1) return 'awaiting_quality';
+    return 'pass';
+  }
 
   function renderSiteMapSvg(record, categoryFilter){
     var geometry = SITE_MAP_GEOMETRY[record.site];
@@ -2117,7 +2245,7 @@
 
     container.innerHTML =
       '<table class="items">' +
-        '<thead><tr><th>Category</th><th>Location</th><th>Pile</th><th>Problem</th><th>Status</th><th>Comments</th></tr></thead>' +
+        '<thead><tr><th>Category</th><th>Location</th><th>Pile</th><th>Problem</th><th>Status</th><th>Comments</th><th>ITC</th></tr></thead>' +
         '<tbody id="itemsTbody"></tbody>' +
       '</table>';
 
@@ -2132,12 +2260,19 @@
     return '<input type="text" class="comment-input" data-cat="' + catIdx + '" data-item="' + itemIdx + '" value="' + escapeHtml(comment || '') + '" placeholder="Add a comment\u2026">';
   }
 
+  function itcButtonHtml(catIdx, itemIdx, itc, category){
+    var template = getItcTemplateForCategory(category);
+    if (!template) return '<span class="comment-readonly">\u2014</span>';
+    var done = itc && itc.criteria && itc.criteria.some(function(c){ return c.code; });
+    return '<button type="button" class="link-btn" data-itc-open data-cat="' + catIdx + '" data-item="' + itemIdx + '">' + (done ? 'View/Edit' : 'Checklist') + '</button>';
+  }
+
   function renderTableBody(){
     var tbody = document.getElementById('itemsTbody');
     if (!tbody) return;
     var items = applyItemFilters(currentAllItems);
     if (!items.length){
-      tbody.innerHTML = '<tr><td colspan="6" style="text-align:center; font-family:var(--font-body); color:var(--text-dim); padding:16px;">No items match.</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="7" style="text-align:center; font-family:var(--font-body); color:var(--text-dim); padding:16px;">No items match.</td></tr>';
       return;
     }
     // data-label attributes let the mobile layout show each cell's column
@@ -2150,6 +2285,7 @@
         '<td data-label="Problem" style="font-family:var(--font-body);">' + escapeHtml(it.problem) + '</td>' +
         '<td data-label="Status">' + statusSelectHtml(it.catIdx, it.itemIdx, it.status, it.category) + '</td>' +
         '<td data-label="Comments">' + commentFieldHtml(it.catIdx, it.itemIdx, it.comment, it.category) + '</td>' +
+        '<td data-label="ITC">' + itcButtonHtml(it.catIdx, it.itemIdx, it.itc, it.category) + '</td>' +
       '</tr>';
     }).join('');
     tbody.querySelectorAll('select[data-cat]').forEach(function(sel){
@@ -2168,6 +2304,13 @@
         setItemComment(catIdx, itemIdx, inp.value);
       });
       inp.addEventListener('keydown', function(e){ if (e.key === 'Enter') inp.blur(); });
+    });
+    tbody.querySelectorAll('button[data-itc-open]').forEach(function(btn){
+      btn.addEventListener('click', function(){
+        var catIdx = parseInt(btn.getAttribute('data-cat'), 10);
+        var itemIdx = parseInt(btn.getAttribute('data-item'), 10);
+        openItcModal(catIdx, itemIdx);
+      });
     });
   }
 
@@ -2212,6 +2355,116 @@
     var historyToggle = document.getElementById('historyToggle');
     var preservedHistory = historyToggle ? historyToggle.checked : false;
 
+    await refreshHistory();
+    await renderDashboard(currentRecord.date, preservedHistory);
+  }
+
+  // ---------- ITC checklist modal ----------
+  function renderItcModal(catIdx, itemIdx){
+    var item = currentRecord.categories[catIdx].items[itemIdx];
+    var category = currentRecord.categories[catIdx].name;
+    var template = getItcTemplateForCategory(category);
+    if (!template) return '';
+    var existing = item.itc || {};
+    var existingCriteria = existing.criteria || [];
+    var restricted = myCategoryAccess !== null && myCategoryAccess.indexOf(category) === -1;
+    var disabledAttr = restricted ? ' disabled' : '';
+
+    var rowsHtml = template.criteria.map(function(text, i){
+      var savedCode = existingCriteria[i] ? existingCriteria[i].code : '';
+      var opts = '<option value="">\u2014</option>' + ITC_CODES.map(function(c){
+        return '<option value="' + c.value + '"' + (c.value === savedCode ? ' selected' : '') + '>' + c.label + '</option>';
+      }).join('');
+      return '<div class="itc-criteria-row"><span>' + (i + 1) + '. ' + escapeHtml(text) + '</span><select data-itc-idx="' + i + '"' + disabledAttr + '>' + opts + '</select></div>';
+    }).join('');
+
+    var legendHtml = ITC_CODES.map(function(c){ return '<div>' + escapeHtml(c.label) + '</div>'; }).join('');
+
+    return '<h3>' + escapeHtml(template.title) + '</h3>' +
+      '<p class="itc-sub">' + escapeHtml(category) + ' \u2014 Table ' + escapeHtml(item.location) + (restricted ? ' \u2014 read-only (no edit access to this category)' : '') + '</p>' +
+      '<div class="itc-legend">' + legendHtml + '</div>' +
+      '<div id="itcCriteriaWrap">' + rowsHtml + '</div>' +
+      '<div class="itc-row-2">' +
+        '<div class="itc-field"><label>Minor Non-Conformances (Remediated by QC)</label><textarea id="itcMinorNc"' + disabledAttr + '>' + escapeHtml(existing.minorNc || '') + '</textarea></div>' +
+        '<div class="itc-field"><label>Major Non-Conformances (For Remediation)</label><textarea id="itcMajorNc"' + disabledAttr + '>' + escapeHtml(existing.majorNc || '') + '</textarea></div>' +
+      '</div>' +
+      '<div class="itc-row-2">' +
+        '<div class="itc-field"><label>QC Checked By</label><input type="text" id="itcCheckedBy" value="' + escapeHtml(existing.checkedBy || currentUserName()) + '"' + disabledAttr + '></div>' +
+        '<div class="itc-field"><label>Date</label><input type="date" id="itcDate" value="' + escapeHtml(existing.date || todayISO()) + '"' + disabledAttr + '></div>' +
+      '</div>' +
+      '<div class="itc-actions">' +
+        '<button class="link-btn" id="itcCancelBtn" type="button">' + (restricted ? 'Close' : 'Cancel') + '</button>' +
+        (restricted ? '' : '<button class="btn btn-primary" id="itcSaveBtn" type="button">Save Checklist \u2014 Updates Status</button>') +
+      '</div>';
+  }
+
+  function openItcModal(catIdx, itemIdx){
+    var overlay = document.getElementById('itcOverlay');
+    var modal = document.getElementById('itcModal');
+    var html = renderItcModal(catIdx, itemIdx);
+    if (!html) return;
+    modal.innerHTML = html;
+    overlay.style.display = 'flex';
+    document.getElementById('itcCancelBtn').addEventListener('click', closeItcModal);
+    var saveBtn = document.getElementById('itcSaveBtn');
+    if (saveBtn) saveBtn.addEventListener('click', function(){ saveItcModal(catIdx, itemIdx); });
+    overlay.onclick = function(e){ if (e.target === overlay) closeItcModal(); };
+  }
+
+  function closeItcModal(){
+    var overlay = document.getElementById('itcOverlay');
+    overlay.style.display = 'none';
+    overlay.onclick = null;
+    document.getElementById('itcModal').innerHTML = '';
+  }
+
+  // Saving computes the table's overall status from every filled-in
+  // criterion (worst result wins — see itcOverallStatus) and applies it
+  // the same way a manual status change would: logged to history,
+  // persisted, dashboard refreshed. The NC lists and per-criterion
+  // results are stored on the item (item.itc) so reopening the
+  // checklist later shows exactly what was recorded.
+  async function saveItcModal(catIdx, itemIdx){
+    if (!currentRecord) return;
+    var item = currentRecord.categories[catIdx].items[itemIdx];
+    var category = currentRecord.categories[catIdx].name;
+    var template = getItcTemplateForCategory(category);
+    var modal = document.getElementById('itcModal');
+    var selects = modal.querySelectorAll('select[data-itc-idx]');
+    var criteria = [];
+    var codes = [];
+    selects.forEach(function(sel){
+      var idx = parseInt(sel.getAttribute('data-itc-idx'), 10);
+      var code = sel.value;
+      criteria.push({ text: template.criteria[idx], code: code });
+      if (code) codes.push(code);
+    });
+    if (!codes.length){
+      alert('Select a result for at least one criterion before saving.');
+      return;
+    }
+
+    var minorNc = document.getElementById('itcMinorNc').value.trim();
+    var majorNc = document.getElementById('itcMajorNc').value.trim();
+    var checkedBy = document.getElementById('itcCheckedBy').value.trim();
+    var date = document.getElementById('itcDate').value;
+
+    var newStatus = itcOverallStatus(codes);
+    var oldStatus = item.status;
+
+    item.itc = { criteria: criteria, minorNc: minorNc, majorNc: majorNc, checkedBy: checkedBy, date: date, filledAt: new Date().toISOString() };
+    if (oldStatus !== newStatus){
+      if (!item.history) item.history = [];
+      item.history.push({ from: oldStatus, to: newStatus, by: (checkedBy || currentUserName()) + ' (ITC checklist)', at: new Date().toISOString() });
+      item.status = newStatus;
+    }
+
+    recomputeTotals(currentRecord);
+    await storeSetShared('rework:' + (currentRecord.site || currentSite) + ':' + currentRecord.date, JSON.stringify(currentRecord));
+
+    closeItcModal();
+    var historyToggle = document.getElementById('historyToggle');
+    var preservedHistory = historyToggle ? historyToggle.checked : false;
     await refreshHistory();
     await renderDashboard(currentRecord.date, preservedHistory);
   }
@@ -2267,7 +2520,7 @@
     var allItems = [];
     current.categories.forEach(function(c, catIdx){
       c.items.forEach(function(it, itemIdx){
-        allItems.push({ catIdx: catIdx, itemIdx: itemIdx, category: c.name, location: it.location, pile: it.pile, problem: it.problem, status: it.status, comment: it.comment });
+        allItems.push({ catIdx: catIdx, itemIdx: itemIdx, category: c.name, location: it.location, pile: it.pile, problem: it.problem, status: it.status, comment: it.comment, itc: it.itc });
         if (it.status !== 'pass'){
           var key = it.problem.trim().toLowerCase() || '(unspecified)';
           if (!problemCounts[key]) problemCounts[key] = { label: it.problem.trim() || '(unspecified)', count: 0 };
