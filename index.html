@@ -71,9 +71,16 @@
 
   .access-panel{ background:#fff; border:1px solid var(--paper-line); padding:18px 20px; margin:0 0 22px; }
   .access-panel h4{ font-family:var(--font-display); font-size:15px; text-transform:uppercase; color:var(--navy); margin:0 0 12px; }
-  .access-row{ display:flex; justify-content:space-between; align-items:center; padding:6px 0; border-bottom:1px solid var(--paper-line); font-family:var(--font-mono); font-size:12.5px; }
+  .access-row{ display:flex; justify-content:space-between; align-items:flex-start; padding:8px 0; border-bottom:1px solid var(--paper-line); font-family:var(--font-mono); font-size:12.5px; }
   .access-row button{ background:none; border:none; color:var(--text-dim); font-size:11px; cursor:pointer; font-family:var(--font-body); }
   .access-row button:hover{ color:var(--pending); }
+  .access-row .link-btn{ color:var(--cyan); text-decoration:underline; }
+  .access-row .link-btn:hover{ color:var(--navy); }
+  .cat-summary{ font-family:var(--font-body); font-size:11px; color:var(--text-dim); }
+  .cat-access-editor{ background:#FAFBFA; border:1px solid var(--paper-line); padding:12px 14px; margin:0 0 10px; }
+  .cat-check-grid{ display:grid; grid-template-columns:repeat(auto-fit, minmax(140px, 1fr)); gap:6px 12px; }
+  .cat-check{ display:flex; align-items:center; gap:6px; font-family:var(--font-body); font-size:12.5px; color:var(--text); cursor:pointer; }
+  .cat-check input{ width:14px; height:14px; }
   .access-add{ display:flex; gap:8px; margin-top:14px; }
   .access-add input{ flex:1; padding:8px 10px; border:1px solid var(--paper-line); font-family:var(--font-body); font-size:13px; }
   .access-caveat{ margin-top:14px; font-size:11px; color:var(--text-dim); line-height:1.5; }
@@ -264,11 +271,18 @@
   table.items th{ position:sticky; top:0; background:#fff; text-align:left; font-family:var(--font-body); font-size:10.5px; letter-spacing:.06em; text-transform:uppercase; color:var(--text-dim); font-weight:600; padding:8px 10px; border-bottom:1px solid var(--paper-line); }
   table.items td{ padding:9px 10px; border-bottom:1px solid var(--paper-line); font-family:var(--font-mono); font-size:12px; }
   table.items td.cat{ font-family:var(--font-body); color:var(--text-dim); }
+  .comment-input{ font-family:var(--font-body); font-size:12px; padding:5px 7px; border:1px solid var(--paper-line); background:#fff; width:100%; box-sizing:border-box; min-width:140px; }
+  .comment-input:focus{ outline:2px solid var(--cyan); outline-offset:1px; border-color:transparent; }
+  .comment-readonly{ font-family:var(--font-body); font-size:12px; color:var(--text-dim); }
   table.items tr:last-child td{ border-bottom:none; }
   .status-select{ font-family:var(--font-mono); font-size:10.5px; font-weight:600; letter-spacing:.02em; padding:4px 6px; border:1px solid transparent; cursor:pointer; }
+  .status-badge-readonly{ font-family:var(--font-mono); font-size:10.5px; font-weight:600; letter-spacing:.02em; padding:4px 6px; border:1px solid transparent; display:inline-block; }
   .status-select.awaiting-construction{ background:var(--awaiting-bg); color:var(--awaiting); }
   .status-select.awaiting-quality{ background:var(--pending-bg); color:var(--pending); }
   .status-select.pass{ background:var(--done-bg); color:var(--done); }
+  .status-badge-readonly.awaiting-construction{ background:var(--awaiting-bg); color:var(--awaiting); }
+  .status-badge-readonly.awaiting-quality{ background:var(--pending-bg); color:var(--pending); }
+  .status-badge-readonly.pass{ background:var(--done-bg); color:var(--done); }
   .status-select:hover{ border-color:currentColor; }
   .status-select:focus{ outline:2px solid var(--cyan); outline-offset:1px; }
 
@@ -318,7 +332,7 @@
     select, .item-filters input, .item-filters select, .status-select,
     .cloud-fields input, .who-bar input, .filetable input, .filetable select,
     #loginEmailInput, #jsonbinKeyInput, #jsonbinBinIdInput, #connectBinIdInput, #connectApiKeyInput,
-    #reportRecipientsInput, #reportCadenceInput{
+    #reportRecipientsInput, #reportCadenceInput, .comment-input{
       font-size:16px !important;
     }
 
@@ -361,7 +375,7 @@
       margin-bottom:3px;
     }
     table.items td.cat{ font-family:var(--font-mono); }
-    .status-select{ width:100%; padding:9px 8px; font-size:13px !important; }
+    .status-select, .status-badge-readonly, .comment-input{ width:100%; padding:9px 8px; box-sizing:border-box; }
     .pending-scroll{ max-height:none; }
   }
   @media print{ body{ background:#fff; padding:0; } .card, .clear-link{ display:none !important; } .dash{ box-shadow:none; } }
@@ -648,6 +662,34 @@
     await jsonbinRequest('PUT', JSONBIN_BASE + '/' + creds.binId, creds.apiKey, payload);
   }
 
+  // Per-email category access, keyed by lowercased email. Missing entry or
+  // an empty array both mean "unrestricted" — full access to every
+  // category — so existing approved emails keep working exactly as
+  // before unless someone deliberately narrows one down. Global by
+  // category NAME, not per-site: approving "Piling" grants it across
+  // every site (STS1, STS3, STS4, ...), matching how these category
+  // names are shared across sites in practice.
+  async function loadCategoryPermissions(){
+    var creds = await getJsonbinCredentials();
+    if (!creds.apiKey || !creds.binId) return {};
+    try {
+      var record = await fetchCloudRecord(creds.apiKey, creds.binId);
+      return (record && record.categoryPermissions && typeof record.categoryPermissions === 'object') ? record.categoryPermissions : {};
+    } catch(e){
+      console.log('Could not load category permissions from Cloud Sync:', e);
+      return {};
+    }
+  }
+
+  async function saveCategoryPermissions(map){
+    var creds = await getJsonbinCredentials();
+    if (!creds.apiKey || !creds.binId) throw new Error('Cloud Sync isn\u2019t configured yet — set an API key and Bin ID below first.');
+    var existing = await fetchCloudRecord(creds.apiKey, creds.binId).catch(function(){ return null; });
+    var payload = existing || { exportedFrom: 'Rework Tracker', exportedAt: new Date().toISOString(), snapshots: [] };
+    payload.categoryPermissions = map;
+    await jsonbinRequest('PUT', JSONBIN_BASE + '/' + creds.binId, creds.apiKey, payload);
+  }
+
   // ---------- DOM refs ----------
   var dropzone = document.getElementById('dropzone');
   var fileInput = document.getElementById('fileInput');
@@ -742,6 +784,7 @@
   // there's nothing to check against, so the gate steps aside entirely
   // rather than pretend to restrict anything.
   var currentLoggedInEmail = null;
+  var myCategoryAccess = null; // null = unrestricted; array of category names = restricted to just those
 
   async function attemptLogin(raw, creds){
     var email = raw.trim().toLowerCase();
@@ -756,9 +799,9 @@
       if (approved.length === 0){
         approved.push(email);
         await saveApprovedEmails(approved);
-        grantAccess(email);
+        await grantAccess(email);
       } else if (approved.indexOf(email) !== -1){
-        grantAccess(email);
+        await grantAccess(email);
       } else {
         loginNote.textContent = 'That email isn\u2019t on the approved list yet. Ask a teammate who already has access to add you under \u201cManage access.\u201d';
       }
@@ -769,9 +812,11 @@
     }
   }
 
-  function grantAccess(email){
+  async function grantAccess(email){
     storeSet('access:my_email', email); // personal — remembers on this device when storage allows it
     currentLoggedInEmail = email;
+    var perms = await loadCategoryPermissions().catch(function(){ return {}; });
+    myCategoryAccess = (perms[email] && perms[email].length) ? perms[email] : null;
     loginGate.style.display = 'none';
     loginNote.textContent = '';
     renderAccountBar();
@@ -779,13 +824,15 @@
 
   function renderAccountBar(){
     if (currentLoggedInEmail){
-      whoBar.innerHTML = 'Signed in as <strong>' + escapeHtml(currentLoggedInEmail) + '</strong> \u00b7 ' +
+      var accessNote = myCategoryAccess ? ' (' + escapeHtml(myCategoryAccess.join(', ')) + ' only)' : '';
+      whoBar.innerHTML = 'Signed in as <strong>' + escapeHtml(currentLoggedInEmail) + '</strong>' + accessNote + ' \u00b7 ' +
         '<button class="link-btn" id="manageAccessBtn">Manage access</button> \u00b7 ' +
         '<button class="link-btn" id="logoutBtn">Log out</button>';
       document.getElementById('manageAccessBtn').addEventListener('click', toggleAccessPanel);
       document.getElementById('logoutBtn').addEventListener('click', function(){
         storeSet('access:my_email', '');
         currentLoggedInEmail = null;
+        myCategoryAccess = null;
         accessPanel.style.display = 'none';
         loginEmailInput.value = '';
         loginNote.textContent = '';
@@ -801,22 +848,63 @@
     }
   }
 
+  var editingCategoryAccessFor = null; // email currently showing its category checkboxes, or null
+
   async function toggleAccessPanel(){
     if (accessPanel.style.display === 'block'){ accessPanel.style.display = 'none'; return; }
     await renderAccessPanel();
     accessPanel.style.display = 'block';
   }
 
+  // Category names offered as checkboxes come from whichever site's data
+  // is currently loaded — this tool doesn't keep a master list of every
+  // category that's ever existed across every site. In practice the QC
+  // template's category names are shared across sites, so this covers
+  // real use; a category unique to a site nobody's currently viewing
+  // won't show up here until that site's dashboard has been opened once.
+  function knownCategoryNames(){
+    return currentRecord ? currentRecord.categories.map(function(c){ return c.name; }) : [];
+  }
+
   async function renderAccessPanel(){
     var approved = await loadApprovedEmails();
+    var permissions = await loadCategoryPermissions();
+    var categories = knownCategoryNames();
+
     var rows = approved.length
       ? approved.map(function(e){
-          return '<div class="access-row"><span>' + escapeHtml(e) + '</span><button data-remove-email="' + escapeHtml(e) + '">Remove</button></div>';
+          var restricted = permissions[e] && permissions[e].length;
+          var summary = restricted ? escapeHtml(permissions[e].join(', ')) : 'All categories';
+          var isEditing = editingCategoryAccessFor === e;
+          var editorHtml = '';
+          if (isEditing){
+            var checks = categories.length
+              ? categories.map(function(c){
+                  var checked = restricted && permissions[e].indexOf(c) !== -1;
+                  return '<label class="cat-check"><input type="checkbox" value="' + escapeHtml(c) + '"' + (checked ? ' checked' : '') + '> ' + escapeHtml(c) + '</label>';
+                }).join('')
+              : '<p class="empty-note">No categories loaded yet — open a site\u2019s dashboard first so its category names are available here.</p>';
+            editorHtml = '<div class="cat-access-editor" data-email="' + escapeHtml(e) + '">' +
+              '<p class="access-caveat" style="margin:8px 0;">Leave everything unchecked for full, unrestricted access. Checking any category restricts this email to only those (view-only elsewhere).</p>' +
+              '<div class="cat-check-grid">' + checks + '</div>' +
+              '<div style="display:flex; gap:8px; margin-top:10px;">' +
+                '<button class="btn btn-ghost" data-save-cats="' + escapeHtml(e) + '">Save</button>' +
+                '<button class="link-btn" data-cancel-cats>Cancel</button>' +
+              '</div>' +
+            '</div>';
+          }
+          return '<div class="access-row"><span>' + escapeHtml(e) + '<br><span class="cat-summary">' + summary + '</span></span>' +
+            '<span style="display:flex; gap:10px; align-items:center;">' +
+              '<button class="link-btn" data-edit-cats="' + escapeHtml(e) + '">' + (isEditing ? 'Close' : 'Edit categories') + '</button>' +
+              '<button data-remove-email="' + escapeHtml(e) + '">Remove</button>' +
+            '</span></div>' + editorHtml;
         }).join('')
       : '<p class="empty-note">No approved emails yet.</p>';
+
     accessPanel.innerHTML = '<h4>Approved Emails</h4>' + rows +
       '<div class="access-add"><input type="email" id="newApprovedEmail" placeholder="teammate@company.com"><button class="btn btn-ghost" id="addApprovedBtn">Add</button></div>' +
-      '<p class="access-caveat">Anyone on this list can sign in and edit shared data. This list lives in your Cloud Sync bin — it\u2019s a courtesy gate, not real security.</p>';
+      '<p class="access-caveat">Anyone on this list can sign in and edit shared data. Category access limits which categories someone can change status on — everything else stays visible but read-only. This list lives in your Cloud Sync bin — it\u2019s a courtesy gate, not real security.</p>';
+
     accessPanel.querySelectorAll('button[data-remove-email]').forEach(function(btn){
       btn.addEventListener('click', async function(){
         var email = btn.getAttribute('data-remove-email');
@@ -825,6 +913,33 @@
         renderAccessPanel();
       });
     });
+    accessPanel.querySelectorAll('button[data-edit-cats]').forEach(function(btn){
+      btn.addEventListener('click', function(){
+        var email = btn.getAttribute('data-edit-cats');
+        editingCategoryAccessFor = (editingCategoryAccessFor === email) ? null : email;
+        renderAccessPanel();
+      });
+    });
+    accessPanel.querySelectorAll('button[data-cancel-cats]').forEach(function(btn){
+      btn.addEventListener('click', function(){
+        editingCategoryAccessFor = null;
+        renderAccessPanel();
+      });
+    });
+    accessPanel.querySelectorAll('button[data-save-cats]').forEach(function(btn){
+      btn.addEventListener('click', async function(){
+        var email = btn.getAttribute('data-save-cats');
+        var editor = accessPanel.querySelector('.cat-access-editor[data-email="' + CSS.escape(email) + '"]');
+        var checked = editor ? Array.prototype.slice.call(editor.querySelectorAll('input[type=checkbox]:checked')).map(function(cb){ return cb.value; }) : [];
+        var permissions = await loadCategoryPermissions();
+        if (checked.length) permissions[email] = checked; else delete permissions[email];
+        await saveCategoryPermissions(permissions);
+        if (currentLoggedInEmail === email) myCategoryAccess = checked.length ? checked : null;
+        editingCategoryAccessFor = null;
+        renderAccessPanel();
+      });
+    });
+
     var addBtn = document.getElementById('addApprovedBtn');
     var addInput = document.getElementById('newApprovedEmail');
     addBtn.addEventListener('click', async function(){
@@ -858,7 +973,7 @@
     var myEmail = r && r.value ? r.value : '';
     var approved = await loadApprovedEmails();
     if (myEmail && (approved.length === 0 || approved.indexOf(myEmail) !== -1)){
-      grantAccess(myEmail);
+      await grantAccess(myEmail);
     } else {
       if (myEmail && approved.indexOf(myEmail) === -1){
         loginNote.textContent = 'Your access was removed. Enter an approved email to continue.';
@@ -1066,8 +1181,8 @@
   var SITE_MAP_GEOMETRY = {
     STS1: {"1-1-17":{r1:15,c1:19,r2:24,c2:19},"1-1-18":{r1:16,c1:20,r2:25,c2:20},"1-1-19":{r1:17,c1:21,r2:26,c2:21},"1-1-20":{r1:18,c1:22,r2:27,c2:22},"1-1-21":{r1:11,c1:23,r2:28,c2:23},"1-1-22":{r1:12,c1:24,r2:29,c2:24},"1-1-23":{r1:13,c1:25,r2:30,c2:25},"1-1-24":{r1:14,c1:26,r2:31,c2:26},"1-1-25":{r1:15,c1:27,r2:32,c2:27},"1-1-26":{r1:8,c1:28,r2:33,c2:28},"1-1-27":{r1:9,c1:29,r2:34,c2:29},"1-1-28":{r1:10,c1:30,r2:35,c2:30},"1-1-29":{r1:11,c1:31,r2:36,c2:31},"1-1-30":{r1:12,c1:32,r2:37,c2:32},"1-1-31":{r1:5,c1:33,r2:38,c2:33},"1-1-32":{r1:6,c1:34,r2:39,c2:34},"1-1-33":{r1:7,c1:35,r2:40,c2:35},"1-1-34":{r1:8,c1:36,r2:41,c2:36},"1-1-35":{r1:9,c1:37,r2:42,c2:37},"1-1-36":{r1:10,c1:38,r2:43,c2:38},"1-1-37":{r1:11,c1:39,r2:44,c2:39},"1-1-38":{r1:12,c1:40,r2:45,c2:40},"1-1-39":{r1:13,c1:41,r2:46,c2:41},"1-1-40":{r1:14,c1:42,r2:47,c2:42},"1-1-41":{r1:15,c1:43,r2:48,c2:43},"1-1-42":{r1:16,c1:44,r2:49,c2:44},"1-1-43":{r1:17,c1:45,r2:50,c2:45},"1-1-44":{r1:18,c1:46,r2:51,c2:46},"1-1-45":{r1:19,c1:47,r2:52,c2:47},"1-1-46":{r1:20,c1:48,r2:53,c2:48},"1-1-47":{r1:21,c1:49,r2:54,c2:49},"1-1-48":{r1:22,c1:50,r2:55,c2:50},"1-1-49":{r1:23,c1:51,r2:56,c2:51},"1-1-50":{r1:24,c1:52,r2:57,c2:52},"1-1-51":{r1:25,c1:53,r2:58,c2:53},"1-1-52":{r1:26,c1:54,r2:59,c2:54},"1-1-53":{r1:27,c1:55,r2:60,c2:55},"1-1-54":{r1:28,c1:56,r2:61,c2:56},"1-1-55":{r1:29,c1:57,r2:62,c2:57},"1-1-56":{r1:30,c1:58,r2:63,c2:58},"1-1-57":{r1:31,c1:59,r2:64,c2:59},"1-1-58":{r1:32,c1:60,r2:65,c2:60},"1-1-59":{r1:33,c1:61,r2:66,c2:61},"1-1-60":{r1:34,c1:62,r2:67,c2:62},"1-1-61":{r1:35,c1:63,r2:68,c2:63},"1-1-62":{r1:36,c1:64,r2:69,c2:64},"1-1-63":{r1:37,c1:65,r2:70,c2:65},"1-1-64":{r1:38,c1:66,r2:71,c2:66},"1-1-65":{r1:39,c1:67,r2:72,c2:67},"1-1-66":{r1:40,c1:68,r2:73,c2:68},"1-1-67":{r1:41,c1:69,r2:74,c2:69},"1-2-1":{r1:34,c1:3,r2:45,c2:3},"1-2-10":{r1:27,c1:12,r2:54,c2:12},"1-2-11":{r1:28,c1:13,r2:55,c2:13},"1-2-12":{r1:29,c1:14,r2:56,c2:14},"1-2-13":{r1:21,c1:15,r2:57,c2:15},"1-2-14":{r1:22,c1:16,r2:58,c2:16},"1-2-15":{r1:23,c1:17,r2:59,c2:17},"1-2-16":{r1:24,c1:18,r2:60,c2:18},"1-2-17":{r1:25,c1:19,r2:61,c2:19},"1-2-18":{r1:26,c1:20,r2:62,c2:20},"1-2-19":{r1:27,c1:21,r2:63,c2:21},"1-2-2":{r1:35,c1:4,r2:46,c2:4},"1-2-20":{r1:28,c1:22,r2:64,c2:22},"1-2-21":{r1:29,c1:23,r2:65,c2:23},"1-2-22":{r1:30,c1:24,r2:66,c2:24},"1-2-23":{r1:31,c1:25,r2:67,c2:25},"1-2-24":{r1:32,c1:26,r2:68,c2:26},"1-2-25":{r1:33,c1:27,r2:69,c2:27},"1-2-26":{r1:34,c1:28,r2:70,c2:28},"1-2-27":{r1:35,c1:29,r2:71,c2:29},"1-2-28":{r1:36,c1:30,r2:72,c2:30},"1-2-29":{r1:37,c1:31,r2:73,c2:31},"1-2-3":{r1:36,c1:5,r2:47,c2:5},"1-2-30":{r1:38,c1:32,r2:74,c2:32},"1-2-31":{r1:39,c1:33,r2:75,c2:33},"1-2-32":{r1:40,c1:34,r2:76,c2:34},"1-2-33":{r1:41,c1:35,r2:77,c2:35},"1-2-34":{r1:42,c1:36,r2:78,c2:36},"1-2-35":{r1:43,c1:37,r2:79,c2:37},"1-2-36":{r1:44,c1:38,r2:80,c2:38},"1-2-37":{r1:45,c1:39,r2:81,c2:39},"1-2-38":{r1:46,c1:40,r2:82,c2:40},"1-2-39":{r1:47,c1:41,r2:83,c2:41},"1-2-4":{r1:29,c1:6,r2:48,c2:6},"1-2-40":{r1:48,c1:42,r2:84,c2:42},"1-2-41":{r1:49,c1:43,r2:85,c2:43},"1-2-42":{r1:50,c1:44,r2:86,c2:44},"1-2-43":{r1:51,c1:45,r2:87,c2:45},"1-2-44":{r1:52,c1:46,r2:88,c2:46},"1-2-45":{r1:53,c1:47,r2:89,c2:47},"1-2-46":{r1:54,c1:48,r2:90,c2:48},"1-2-47":{r1:55,c1:49,r2:91,c2:49},"1-2-48":{r1:56,c1:50,r2:92,c2:50},"1-2-49":{r1:57,c1:51,r2:93,c2:51},"1-2-5":{r1:30,c1:7,r2:49,c2:7},"1-2-50":{r1:58,c1:52,r2:94,c2:52},"1-2-51":{r1:59,c1:53,r2:95,c2:53},"1-2-52":{r1:60,c1:54,r2:96,c2:54},"1-2-53":{r1:61,c1:55,r2:97,c2:55},"1-2-54":{r1:62,c1:56,r2:98,c2:56},"1-2-55":{r1:63,c1:57,r2:99,c2:57},"1-2-56":{r1:64,c1:58,r2:100,c2:58},"1-2-57":{r1:65,c1:59,r2:101,c2:59},"1-2-58":{r1:66,c1:60,r2:102,c2:60},"1-2-59":{r1:67,c1:61,r2:103,c2:61},"1-2-6":{r1:31,c1:8,r2:50,c2:8},"1-2-60":{r1:68,c1:62,r2:104,c2:62},"1-2-61":{r1:69,c1:63,r2:105,c2:63},"1-2-62":{r1:70,c1:64,r2:106,c2:64},"1-2-63":{r1:71,c1:65,r2:107,c2:65},"1-2-64":{r1:72,c1:66,r2:108,c2:66},"1-2-65":{r1:73,c1:67,r2:109,c2:67},"1-2-66":{r1:74,c1:68,r2:110,c2:68},"1-2-67":{r1:75,c1:69,r2:111,c2:69},"1-2-68":{r1:76,c1:70,r2:112,c2:70},"1-2-7":{r1:32,c1:9,r2:51,c2:9},"1-2-8":{r1:33,c1:10,r2:52,c2:10},"1-2-9":{r1:26,c1:11,r2:53,c2:11},"13-2-6":{r1:31,c1:8,r2:50,c2:8},"3-2-13":{r1:21,c1:15,r2:57,c2:15}},
     STS3: {"3-1-29":{r1:5,c1:31,r2:13,c2:31},"3-1-30":{r1:6,c1:32,r2:14,c2:32},"3-1-31":{r1:7,c1:33,r2:15,c2:33},"3-1-32":{r1:8,c1:34,r2:16,c2:34},"3-1-33":{r1:9,c1:35,r2:17,c2:35},"3-1-34":{r1:10,c1:36,r2:18,c2:36},"3-2-11":{r1:23,c1:13,r2:32,c2:13},"3-2-12":{r1:24,c1:14,r2:33,c2:14},"3-2-13":{r1:25,c1:15,r2:34,c2:15},"3-2-14":{r1:26,c1:16,r2:35,c2:16},"3-2-15":{r1:27,c1:17,r2:36,c2:17},"3-2-16":{r1:20,c1:18,r2:37,c2:18},"3-2-17":{r1:21,c1:19,r2:38,c2:19},"3-2-18":{r1:22,c1:20,r2:39,c2:20},"3-2-19":{r1:23,c1:21,r2:40,c2:21},"3-2-20":{r1:14,c1:22,r2:41,c2:22},"3-2-21":{r1:15,c1:23,r2:42,c2:23},"3-2-22":{r1:16,c1:24,r2:43,c2:24},"3-2-23":{r1:17,c1:25,r2:44,c2:25},"3-2-24":{r1:9,c1:26,r2:45,c2:26},"3-2-25":{r1:10,c1:27,r2:46,c2:27},"3-2-26":{r1:11,c1:28,r2:47,c2:28},"3-2-27":{r1:12,c1:29,r2:48,c2:29},"3-2-28":{r1:13,c1:30,r2:49,c2:30},"3-2-29":{r1:14,c1:31,r2:50,c2:31},"3-2-30":{r1:15,c1:32,r2:51,c2:32},"3-2-31":{r1:16,c1:33,r2:52,c2:33},"3-2-32":{r1:17,c1:34,r2:53,c2:34},"3-2-33":{r1:18,c1:35,r2:54,c2:35},"3-2-34":{r1:19,c1:36,r2:55,c2:36},"3-2-35":{r1:20,c1:37,r2:56,c2:37},"3-2-36":{r1:21,c1:38,r2:57,c2:38},"3-2-37":{r1:22,c1:39,r2:58,c2:39},"3-2-38":{r1:23,c1:40,r2:59,c2:40},"3-2-39":{r1:24,c1:41,r2:60,c2:41},"3-2-40":{r1:25,c1:42,r2:61,c2:42},"3-3-1":{r1:30,c1:3,r2:39,c2:3},"3-3-10":{r1:32,c1:12,r2:68,c2:12},"3-3-11":{r1:33,c1:13,r2:69,c2:13},"3-3-12":{r1:34,c1:14,r2:70,c2:14},"3-3-13":{r1:35,c1:15,r2:71,c2:15},"3-3-14":{r1:36,c1:16,r2:72,c2:16},"3-3-15":{r1:37,c1:17,r2:73,c2:17},"3-3-16":{r1:38,c1:18,r2:74,c2:18},"3-3-17":{r1:39,c1:19,r2:75,c2:19},"3-3-18":{r1:40,c1:20,r2:76,c2:20},"3-3-19":{r1:41,c1:21,r2:77,c2:21},"3-3-2":{r1:29,c1:4,r2:38,c2:4},"3-3-20":{r1:42,c1:22,r2:78,c2:22},"3-3-21":{r1:43,c1:23,r2:79,c2:23},"3-3-22":{r1:44,c1:24,r2:80,c2:24},"3-3-23":{r1:45,c1:25,r2:81,c2:25},"3-3-24":{r1:46,c1:26,r2:82,c2:26},"3-3-25":{r1:47,c1:27,r2:83,c2:27},"3-3-26":{r1:48,c1:28,r2:84,c2:28},"3-3-27":{r1:49,c1:29,r2:85,c2:29},"3-3-28":{r1:50,c1:30,r2:86,c2:30},"3-3-29":{r1:51,c1:31,r2:87,c2:31},"3-3-3":{r1:28,c1:5,r2:46,c2:5},"3-3-30":{r1:52,c1:32,r2:88,c2:32},"3-3-31":{r1:53,c1:33,r2:89,c2:33},"3-3-32":{r1:54,c1:34,r2:90,c2:34},"3-3-33":{r1:55,c1:35,r2:91,c2:35},"3-3-34":{r1:56,c1:36,r2:92,c2:36},"3-3-35":{r1:57,c1:37,r2:93,c2:37},"3-3-36":{r1:58,c1:38,r2:94,c2:38},"3-3-37":{r1:59,c1:39,r2:95,c2:39},"3-3-38":{r1:60,c1:40,r2:96,c2:40},"3-3-39":{r1:61,c1:41,r2:97,c2:41},"3-3-4":{r1:27,c1:6,r2:45,c2:6},"3-3-40":{r1:62,c1:42,r2:98,c2:42},"3-3-5":{r1:27,c1:7,r2:54,c2:7},"3-3-6":{r1:28,c1:8,r2:55,c2:8},"3-3-7":{r1:29,c1:9,r2:56,c2:9},"3-3-8":{r1:30,c1:10,r2:66,c2:10},"3-3-9":{r1:31,c1:11,r2:67,c2:11},"3-4-50":{r1:26,c1:52,r2:34,c2:52},"3-4-51":{r1:27,c1:53,r2:35,c2:53},"3-4-52":{r1:28,c1:54,r2:36,c2:54},"3-4-53":{r1:29,c1:55,r2:37,c2:55},"3-5-50":{r1:35,c1:52,r2:71,c2:52},"3-5-51":{r1:36,c1:53,r2:72,c2:53},"3-5-52":{r1:37,c1:54,r2:73,c2:54},"3-5-53":{r1:38,c1:55,r2:74,c2:55},"3-5-54":{r1:39,c1:56,r2:75,c2:56},"3-5-55":{r1:40,c1:57,r2:76,c2:57},"3-5-56":{r1:41,c1:58,r2:77,c2:58},"3-5-57":{r1:42,c1:59,r2:78,c2:59},"3-5-58":{r1:48,c1:60,r2:79,c2:60},"3-5-59":{r1:49,c1:61,r2:80,c2:61},"3-5-60":{r1:50,c1:62,r2:81,c2:62},"3-5-61":{r1:57,c1:63,r2:82,c2:63},"3-5-62":{r1:58,c1:64,r2:83,c2:64},"3-5-63":{r1:59,c1:65,r2:84,c2:65},"3-5-64":{r1:60,c1:66,r2:85,c2:66},"3-5-65":{r1:69,c1:67,r2:86,c2:67},"3-5-66":{r1:70,c1:68,r2:87,c2:68},"3-5-67":{r1:71,c1:69,r2:88,c2:69},"3-6-41":{r1:63,c1:43,r2:99,c2:43},"3-6-42":{r1:64,c1:44,r2:100,c2:44},"3-6-43":{r1:65,c1:45,r2:101,c2:45},"3-6-44":{r1:66,c1:46,r2:102,c2:46},"3-6-45":{r1:67,c1:47,r2:103,c2:47},"3-6-46":{r1:68,c1:48,r2:104,c2:48},"3-6-47":{r1:69,c1:49,r2:105,c2:49},"3-6-48":{r1:70,c1:50,r2:106,c2:50},"3-6-49":{r1:71,c1:51,r2:107,c2:51},"3-6-50":{r1:72,c1:52,r2:108,c2:52},"3-6-51":{r1:73,c1:53,r2:109,c2:53},"3-6-52":{r1:74,c1:54,r2:110,c2:54},"3-6-53":{r1:75,c1:55,r2:111,c2:55},"3-6-54":{r1:76,c1:56,r2:112,c2:56},"3-6-55":{r1:77,c1:57,r2:113,c2:57},"3-6-56":{r1:78,c1:58,r2:114,c2:58},"3-6-57":{r1:79,c1:59,r2:115,c2:59},"3-6-58":{r1:80,c1:60,r2:116,c2:60},"3-6-59":{r1:81,c1:61,r2:117,c2:61},"3-6-60":{r1:82,c1:62,r2:118,c2:62},"3-6-61":{r1:83,c1:63,r2:119,c2:63},"3-6-62":{r1:84,c1:64,r2:120,c2:64},"3-6-63":{r1:85,c1:65,r2:121,c2:65},"3-6-64":{r1:86,c1:66,r2:122,c2:66},"3-6-65":{r1:87,c1:67,r2:123,c2:67},"3-6-66":{r1:88,c1:68,r2:124,c2:68},"3-6-67":{r1:89,c1:69,r2:125,c2:69},"3-6-68":{r1:90,c1:70,r2:126,c2:70},"3-6-69":{r1:91,c1:71,r2:127,c2:71},"3-6-70":{r1:92,c1:72,r2:128,c2:72},"3-6-71":{r1:93,c1:73,r2:129,c2:73},"3-6-72":{r1:102,c1:74,r2:130,c2:74},"3-6-73":{r1:103,c1:75,r2:131,c2:75},"3-6-74":{r1:104,c1:76,r2:132,c2:76},"3-6-75":{r1:111,c1:77,r2:133,c2:77},"3-6-76":{r1:112,c1:78,r2:134,c2:78},"3-6-77":{r1:113,c1:79,r2:135,c2:79},"3-6-78":{r1:114,c1:80,r2:136,c2:80},"3-6-79":{r1:120,c1:81,r2:137,c2:81},"3-6-80":{r1:121,c1:82,r2:138,c2:82},"3-6-81":{r1:122,c1:83,r2:139,c2:83},"3-6-82":{r1:123,c1:84,r2:140,c2:84}},
-    STS4: {"4-1-10":{r1:21,c1:12,r2:40,c2:12},"4-1-11":{r1:20,c1:13,r2:39,c2:13},"4-1-12":{r1:19,c1:14,r2:38,c2:14},"4-1-13":{r1:18,c1:15,r2:37,c2:15},"4-1-14":{r1:17,c1:16,r2:36,c2:16},"4-1-15":{r1:16,c1:17,r2:35,c2:17},"4-1-16":{r1:35,c1:18,r2:71,c2:18},"4-1-17":{r1:14,c1:19,r2:33,c2:19},"4-1-18":{r1:13,c1:20,r2:32,c2:20},"4-1-19":{r1:32,c1:21,r2:68,c2:21},"4-1-20":{r1:11,c1:22,r2:30,c2:22},"4-1-21":{r1:10,c1:23,r2:29,c2:23},"4-1-22":{r1:9,c1:24,r2:28,c2:24},"4-1-23":{r1:8,c1:25,r2:27,c2:25},"4-1-24":{r1:7,c1:26,r2:26,c2:26},"4-1-25":{r1:6,c1:27,r2:25,c2:27},"4-1-26":{r1:14,c1:28,r2:24,c2:28},"4-1-27":{r1:13,c1:29,r2:23,c2:29},"4-1-28":{r1:12,c1:30,r2:22,c2:30},"4-1-29":{r1:11,c1:31,r2:21,c2:31},"4-1-30":{r1:10,c1:32,r2:20,c2:32},"4-1-31":{r1:9,c1:33,r2:19,c2:33},"4-1-7":{r1:27,c1:9,r2:37,c2:9},"4-1-8":{r1:23,c1:10,r2:42,c2:10},"4-1-9":{r1:22,c1:11,r2:41,c2:11},"4-2-1":{r1:35,c1:3,r2:45,c2:3},"4-2-10":{r1:41,c1:12,r2:77,c2:12},"4-2-11":{r1:40,c1:13,r2:76,c2:13},"4-2-12":{r1:39,c1:14,r2:75,c2:14},"4-2-13":{r1:38,c1:15,r2:74,c2:15},"4-2-14":{r1:37,c1:16,r2:73,c2:16},"4-2-15":{r1:36,c1:17,r2:72,c2:17},"4-2-16":{r1:35,c1:18,r2:71,c2:18},"4-2-17":{r1:34,c1:19,r2:70,c2:19},"4-2-18":{r1:33,c1:20,r2:69,c2:20},"4-2-19":{r1:32,c1:21,r2:68,c2:21},"4-2-2":{r1:30,c1:4,r2:49,c2:4},"4-2-20":{r1:31,c1:22,r2:67,c2:22},"4-2-21":{r1:30,c1:23,r2:66,c2:23},"4-2-22":{r1:29,c1:24,r2:65,c2:24},"4-2-23":{r1:28,c1:25,r2:64,c2:25},"4-2-24":{r1:27,c1:26,r2:63,c2:26},"4-2-25":{r1:26,c1:27,r2:62,c2:27},"4-2-26":{r1:25,c1:28,r2:61,c2:28},"4-2-27":{r1:24,c1:29,r2:60,c2:29},"4-2-28":{r1:23,c1:30,r2:59,c2:30},"4-2-29":{r1:22,c1:31,r2:58,c2:31},"4-2-3":{r1:36,c1:5,r2:55,c2:5},"4-2-30":{r1:21,c1:32,r2:57,c2:32},"4-2-31":{r1:20,c1:33,r2:56,c2:33},"4-2-32":{r1:19,c1:34,r2:55,c2:34},"4-2-33":{r1:18,c1:35,r2:54,c2:35},"4-2-34":{r1:17,c1:36,r2:53,c2:36},"4-2-35":{r1:16,c1:37,r2:52,c2:37},"4-2-36":{r1:24,c1:38,r2:51,c2:38},"4-2-37":{r1:23,c1:39,r2:50,c2:39},"4-2-38":{r1:22,c1:40,r2:49,c2:40},"4-2-39":{r1:21,c1:41,r2:48,c2:41},"4-2-4":{r1:31,c1:6,r2:58,c2:6},"4-2-40":{r1:29,c1:42,r2:48,c2:42},"4-2-41":{r1:29,c1:43,r2:48,c2:43},"4-2-42":{r1:29,c1:44,r2:48,c2:44},"4-2-43":{r1:29,c1:45,r2:48,c2:45},"4-2-44":{r1:29,c1:46,r2:48,c2:46},"4-2-45":{r1:38,c1:47,r2:48,c2:47},"4-2-46":{r1:38,c1:48,r2:48,c2:48},"4-2-47":{r1:38,c1:49,r2:48,c2:49},"4-2-48":{r1:38,c1:50,r2:48,c2:50},"4-2-49":{r1:38,c1:51,r2:48,c2:51},"4-2-5":{r1:27,c1:7,r2:63,c2:7},"4-2-6":{r1:31,c1:8,r2:58,c2:8},"4-2-7":{r1:38,c1:9,r2:74,c2:9},"4-2-8":{r1:43,c1:10,r2:79,c2:10},"4-2-9":{r1:42,c1:11,r2:78,c2:11},"4-3-49":{r1:58,c1:51,r2:77,c2:51},"4-3-50":{r1:59,c1:52,r2:78,c2:52},"4-3-51":{r1:60,c1:53,r2:79,c2:53},"4-3-52":{r1:61,c1:54,r2:80,c2:54},"4-3-53":{r1:62,c1:55,r2:81,c2:55},"4-3-54":{r1:63,c1:56,r2:82,c2:56},"4-3-55":{r1:64,c1:57,r2:83,c2:57},"4-3-56":{r1:65,c1:58,r2:84,c2:58},"4-3-57":{r1:66,c1:59,r2:85,c2:59},"4-3-58":{r1:67,c1:60,r2:86,c2:60},"4-3-59":{r1:68,c1:61,r2:87,c2:61},"4-3-60":{r1:69,c1:62,r2:88,c2:62},"4-3-61":{r1:70,c1:63,r2:89,c2:63},"4-3-62":{r1:71,c1:64,r2:90,c2:64},"4-3-63":{r1:72,c1:65,r2:91,c2:65},"4-4-55":{r1:84,c1:57,r2:120,c2:57},"4-4-56":{r1:85,c1:58,r2:121,c2:58},"4-4-57":{r1:86,c1:59,r2:122,c2:59},"4-4-58":{r1:87,c1:60,r2:123,c2:60},"4-4-59":{r1:88,c1:61,r2:124,c2:61},"4-4-60":{r1:89,c1:62,r2:125,c2:62},"4-4-61":{r1:90,c1:63,r2:126,c2:63},"4-4-62":{r1:91,c1:64,r2:127,c2:64},"4-4-63":{r1:92,c1:65,r2:128,c2:65},"4-5-68":{r1:71,c1:74,r2:81,c2:74},"4-5-69":{r1:71,c1:75,r2:81,c2:75},"4-5-70":{r1:70,c1:76,r2:89,c2:76},"4-5-71":{r1:70,c1:77,r2:89,c2:77},"4-5-72":{r1:70,c1:78,r2:89,c2:78},"4-5-73":{r1:69,c1:79,r2:96,c2:79},"4-5-74":{r1:69,c1:80,r2:96,c2:80},"4-5-75":{r1:69,c1:81,r2:105,c2:81},"4-5-76":{r1:72,c1:82,r2:108,c2:82},"4-5-77":{r1:74,c1:83,r2:110,c2:83},"4-5-78":{r1:76,c1:84,r2:112,c2:84},"4-5-79":{r1:78,c1:85,r2:114,c2:85},"4-5-80":{r1:80,c1:86,r2:116,c2:86},"4-5-81":{r1:82,c1:87,r2:118,c2:87},"4-5-82":{r1:84,c1:88,r2:120,c2:88},"4-5-83":{r1:85,c1:89,r2:121,c2:89},"4-5-84":{r1:86,c1:90,r2:122,c2:90},"4-5-85":{r1:87,c1:91,r2:123,c2:91},"4-5-86":{r1:88,c1:92,r2:124,c2:92},"4-5-87":{r1:89,c1:93,r2:125,c2:93},"4-5-88":{r1:90,c1:94,r2:126,c2:94},"4-5-89":{r1:91,c1:95,r2:127,c2:95},"4-6-83":{r1:122,c1:89,r2:132,c2:89},"4-6-84":{r1:123,c1:90,r2:133,c2:90},"4-6-85":{r1:124,c1:91,r2:134,c2:91},"4-6-86":{r1:125,c1:92,r2:135,c2:92},"4-6-87":{r1:126,c1:93,r2:136,c2:93},"4-6-88":{r1:127,c1:94,r2:137,c2:94},"4-6-89":{r1:128,c1:95,r2:138,c2:95},"4-7-64":{r1:53,c1:70,r2:63,c2:70},"4-7-65":{r1:53,c1:71,r2:63,c2:71},"4-7-66":{r1:52,c1:72,r2:62,c2:72},"4-7-67":{r1:52,c1:73,r2:62,c2:73},"4-7-68":{r1:52,c1:74,r2:62,c2:74},"4-7-69":{r1:52,c1:75,r2:62,c2:75},"4-7-70":{r1:51,c1:76,r2:61,c2:76},"4-7-71":{r1:51,c1:77,r2:61,c2:77},"4-7-72":{r1:51,c1:78,r2:61,c2:78},"4-7-73":{r1:51,c1:79,r2:61,c2:79},"4-7-74":{r1:50,c1:80,r2:60,c2:80},"4-7-75":{r1:49,c1:81,r2:59,c2:81},"4-7-76":{r1:48,c1:82,r2:58,c2:82},"4-7-77":{r1:47,c1:83,r2:57,c2:83},"4-7-78":{r1:46,c1:84,r2:56,c2:84},"4-7-79":{r1:45,c1:85,r2:55,c2:85},"4-7-80":{r1:44,c1:86,r2:54,c2:86},"4-7-81":{r1:43,c1:87,r2:52,c2:87},"4-7-82":{r1:42,c1:88,r2:51,c2:88},"4-8-79":{r1:64,c1:85,r2:73,c2:85},"4-8-80":{r1:64,c1:86,r2:73,c2:86},"4-8-81":{r1:63,c1:87,r2:72,c2:87},"4-8-82":{r1:63,c1:88,r2:72,c2:88},"4-8-83":{r1:62,c1:89,r2:81,c2:89},"4-8-84":{r1:62,c1:90,r2:81,c2:90},"4-8-85":{r1:61,c1:91,r2:80,c2:91},"4-8-86":{r1:61,c1:92,r2:80,c2:92},"4-8-87":{r1:60,c1:93,r2:79,c2:93},"4-8-88":{r1:60,c1:94,r2:79,c2:94},"4-8-89":{r1:59,c1:95,r2:78,c2:95},"4-8-90":{r1:59,c1:96,r2:78,c2:96},"4-8-91":{r1:58,c1:97,r2:77,c2:97},"4-8-92":{r1:58,c1:98,r2:77,c2:98},"4-9-100":{r1:43,c1:106,r2:62,c2:106},"4-9-101":{r1:43,c1:107,r2:62,c2:107},"4-9-102":{r1:43,c1:108,r2:62,c2:108},"4-9-103":{r1:42,c1:109,r2:61,c2:109},"4-9-104":{r1:42,c1:110,r2:61,c2:110},"4-9-105":{r1:42,c1:111,r2:61,c2:111},"4-9-106":{r1:42,c1:112,r2:61,c2:112},"4-9-107":{r1:42,c1:113,r2:61,c2:113},"4-9-108":{r1:42,c1:114,r2:61,c2:114},"4-9-109":{r1:41,c1:115,r2:50,c2:115},"4-9-110":{r1:41,c1:116,r2:50,c2:116},"4-9-111":{r1:41,c1:117,r2:50,c2:117},"4-9-112":{r1:41,c1:118,r2:50,c2:118},"4-9-113":{r1:40,c1:119,r2:49,c2:119},"4-9-114":{r1:40,c1:120,r2:49,c2:120},"4-9-115":{r1:40,c1:121,r2:49,c2:121},"4-9-116":{r1:40,c1:122,r2:49,c2:122},"4-9-93":{r1:45,c1:99,r2:54,c2:99},"4-9-94":{r1:45,c1:100,r2:54,c2:100},"4-9-95":{r1:44,c1:101,r2:53,c2:101},"4-9-96":{r1:44,c1:102,r2:53,c2:102},"4-9-97":{r1:44,c1:103,r2:53,c2:103},"4-9-98":{r1:43,c1:104,r2:62,c2:104},"4-9-99":{r1:43,c1:105,r2:62,c2:105}}
-    // STS2: not populated yet — send that workbook and I'll extract it the same way.
+    STS4: {"4-1-10":{r1:21,c1:12,r2:40,c2:12},"4-1-11":{r1:20,c1:13,r2:39,c2:13},"4-1-12":{r1:19,c1:14,r2:38,c2:14},"4-1-13":{r1:18,c1:15,r2:37,c2:15},"4-1-14":{r1:17,c1:16,r2:36,c2:16},"4-1-15":{r1:16,c1:17,r2:35,c2:17},"4-1-16":{r1:35,c1:18,r2:71,c2:18},"4-1-17":{r1:14,c1:19,r2:33,c2:19},"4-1-18":{r1:13,c1:20,r2:32,c2:20},"4-1-19":{r1:32,c1:21,r2:68,c2:21},"4-1-20":{r1:11,c1:22,r2:30,c2:22},"4-1-21":{r1:10,c1:23,r2:29,c2:23},"4-1-22":{r1:9,c1:24,r2:28,c2:24},"4-1-23":{r1:8,c1:25,r2:27,c2:25},"4-1-24":{r1:7,c1:26,r2:26,c2:26},"4-1-25":{r1:6,c1:27,r2:25,c2:27},"4-1-26":{r1:14,c1:28,r2:24,c2:28},"4-1-27":{r1:13,c1:29,r2:23,c2:29},"4-1-28":{r1:12,c1:30,r2:22,c2:30},"4-1-29":{r1:11,c1:31,r2:21,c2:31},"4-1-30":{r1:10,c1:32,r2:20,c2:32},"4-1-31":{r1:9,c1:33,r2:19,c2:33},"4-1-7":{r1:27,c1:9,r2:37,c2:9},"4-1-8":{r1:23,c1:10,r2:42,c2:10},"4-1-9":{r1:22,c1:11,r2:41,c2:11},"4-2-1":{r1:35,c1:3,r2:45,c2:3},"4-2-10":{r1:41,c1:12,r2:77,c2:12},"4-2-11":{r1:40,c1:13,r2:76,c2:13},"4-2-12":{r1:39,c1:14,r2:75,c2:14},"4-2-13":{r1:38,c1:15,r2:74,c2:15},"4-2-14":{r1:37,c1:16,r2:73,c2:16},"4-2-15":{r1:36,c1:17,r2:72,c2:17},"4-2-16":{r1:35,c1:18,r2:71,c2:18},"4-2-17":{r1:34,c1:19,r2:70,c2:19},"4-2-18":{r1:33,c1:20,r2:69,c2:20},"4-2-19":{r1:32,c1:21,r2:68,c2:21},"4-2-2":{r1:30,c1:4,r2:49,c2:4},"4-2-20":{r1:31,c1:22,r2:67,c2:22},"4-2-21":{r1:30,c1:23,r2:66,c2:23},"4-2-22":{r1:29,c1:24,r2:65,c2:24},"4-2-23":{r1:28,c1:25,r2:64,c2:25},"4-2-24":{r1:27,c1:26,r2:63,c2:26},"4-2-25":{r1:26,c1:27,r2:62,c2:27},"4-2-26":{r1:25,c1:28,r2:61,c2:28},"4-2-27":{r1:24,c1:29,r2:60,c2:29},"4-2-28":{r1:23,c1:30,r2:59,c2:30},"4-2-29":{r1:22,c1:31,r2:58,c2:31},"4-2-3":{r1:36,c1:5,r2:55,c2:5},"4-2-30":{r1:21,c1:32,r2:57,c2:32},"4-2-31":{r1:20,c1:33,r2:56,c2:33},"4-2-32":{r1:19,c1:34,r2:55,c2:34},"4-2-33":{r1:18,c1:35,r2:54,c2:35},"4-2-34":{r1:17,c1:36,r2:53,c2:36},"4-2-35":{r1:16,c1:37,r2:52,c2:37},"4-2-36":{r1:24,c1:38,r2:51,c2:38},"4-2-37":{r1:23,c1:39,r2:50,c2:39},"4-2-38":{r1:22,c1:40,r2:49,c2:40},"4-2-39":{r1:21,c1:41,r2:48,c2:41},"4-2-4":{r1:31,c1:6,r2:58,c2:6},"4-2-40":{r1:29,c1:42,r2:48,c2:42},"4-2-41":{r1:29,c1:43,r2:48,c2:43},"4-2-42":{r1:29,c1:44,r2:48,c2:44},"4-2-43":{r1:29,c1:45,r2:48,c2:45},"4-2-44":{r1:29,c1:46,r2:48,c2:46},"4-2-45":{r1:38,c1:47,r2:48,c2:47},"4-2-46":{r1:38,c1:48,r2:48,c2:48},"4-2-47":{r1:38,c1:49,r2:48,c2:49},"4-2-48":{r1:38,c1:50,r2:48,c2:50},"4-2-49":{r1:38,c1:51,r2:48,c2:51},"4-2-5":{r1:27,c1:7,r2:63,c2:7},"4-2-6":{r1:31,c1:8,r2:58,c2:8},"4-2-7":{r1:38,c1:9,r2:74,c2:9},"4-2-8":{r1:43,c1:10,r2:79,c2:10},"4-2-9":{r1:42,c1:11,r2:78,c2:11},"4-3-49":{r1:58,c1:51,r2:77,c2:51},"4-3-50":{r1:59,c1:52,r2:78,c2:52},"4-3-51":{r1:60,c1:53,r2:79,c2:53},"4-3-52":{r1:61,c1:54,r2:80,c2:54},"4-3-53":{r1:62,c1:55,r2:81,c2:55},"4-3-54":{r1:63,c1:56,r2:82,c2:56},"4-3-55":{r1:64,c1:57,r2:83,c2:57},"4-3-56":{r1:65,c1:58,r2:84,c2:58},"4-3-57":{r1:66,c1:59,r2:85,c2:59},"4-3-58":{r1:67,c1:60,r2:86,c2:60},"4-3-59":{r1:68,c1:61,r2:87,c2:61},"4-3-60":{r1:69,c1:62,r2:88,c2:62},"4-3-61":{r1:70,c1:63,r2:89,c2:63},"4-3-62":{r1:71,c1:64,r2:90,c2:64},"4-3-63":{r1:72,c1:65,r2:91,c2:65},"4-4-55":{r1:84,c1:57,r2:120,c2:57},"4-4-56":{r1:85,c1:58,r2:121,c2:58},"4-4-57":{r1:86,c1:59,r2:122,c2:59},"4-4-58":{r1:87,c1:60,r2:123,c2:60},"4-4-59":{r1:88,c1:61,r2:124,c2:61},"4-4-60":{r1:89,c1:62,r2:125,c2:62},"4-4-61":{r1:90,c1:63,r2:126,c2:63},"4-4-62":{r1:91,c1:64,r2:127,c2:64},"4-4-63":{r1:92,c1:65,r2:128,c2:65},"4-5-68":{r1:71,c1:74,r2:81,c2:74},"4-5-69":{r1:71,c1:75,r2:81,c2:75},"4-5-70":{r1:70,c1:76,r2:89,c2:76},"4-5-71":{r1:70,c1:77,r2:89,c2:77},"4-5-72":{r1:70,c1:78,r2:89,c2:78},"4-5-73":{r1:69,c1:79,r2:96,c2:79},"4-5-74":{r1:69,c1:80,r2:96,c2:80},"4-5-75":{r1:69,c1:81,r2:105,c2:81},"4-5-76":{r1:72,c1:82,r2:108,c2:82},"4-5-77":{r1:74,c1:83,r2:110,c2:83},"4-5-78":{r1:76,c1:84,r2:112,c2:84},"4-5-79":{r1:78,c1:85,r2:114,c2:85},"4-5-80":{r1:80,c1:86,r2:116,c2:86},"4-5-81":{r1:82,c1:87,r2:118,c2:87},"4-5-82":{r1:84,c1:88,r2:120,c2:88},"4-5-83":{r1:85,c1:89,r2:121,c2:89},"4-5-84":{r1:86,c1:90,r2:122,c2:90},"4-5-85":{r1:87,c1:91,r2:123,c2:91},"4-5-86":{r1:88,c1:92,r2:124,c2:92},"4-5-87":{r1:89,c1:93,r2:125,c2:93},"4-5-88":{r1:90,c1:94,r2:126,c2:94},"4-5-89":{r1:91,c1:95,r2:127,c2:95},"4-6-83":{r1:122,c1:89,r2:132,c2:89},"4-6-84":{r1:123,c1:90,r2:133,c2:90},"4-6-85":{r1:124,c1:91,r2:134,c2:91},"4-6-86":{r1:125,c1:92,r2:135,c2:92},"4-6-87":{r1:126,c1:93,r2:136,c2:93},"4-6-88":{r1:127,c1:94,r2:137,c2:94},"4-6-89":{r1:128,c1:95,r2:138,c2:95},"4-7-64":{r1:53,c1:70,r2:63,c2:70},"4-7-65":{r1:53,c1:71,r2:63,c2:71},"4-7-66":{r1:52,c1:72,r2:62,c2:72},"4-7-67":{r1:52,c1:73,r2:62,c2:73},"4-7-68":{r1:52,c1:74,r2:62,c2:74},"4-7-69":{r1:52,c1:75,r2:62,c2:75},"4-7-70":{r1:51,c1:76,r2:61,c2:76},"4-7-71":{r1:51,c1:77,r2:61,c2:77},"4-7-72":{r1:51,c1:78,r2:61,c2:78},"4-7-73":{r1:51,c1:79,r2:61,c2:79},"4-7-74":{r1:50,c1:80,r2:60,c2:80},"4-7-75":{r1:49,c1:81,r2:59,c2:81},"4-7-76":{r1:48,c1:82,r2:58,c2:82},"4-7-77":{r1:47,c1:83,r2:57,c2:83},"4-7-78":{r1:46,c1:84,r2:56,c2:84},"4-7-79":{r1:45,c1:85,r2:55,c2:85},"4-7-80":{r1:44,c1:86,r2:54,c2:86},"4-7-81":{r1:43,c1:87,r2:52,c2:87},"4-7-82":{r1:42,c1:88,r2:51,c2:88},"4-8-79":{r1:64,c1:85,r2:73,c2:85},"4-8-80":{r1:64,c1:86,r2:73,c2:86},"4-8-81":{r1:63,c1:87,r2:72,c2:87},"4-8-82":{r1:63,c1:88,r2:72,c2:88},"4-8-83":{r1:62,c1:89,r2:81,c2:89},"4-8-84":{r1:62,c1:90,r2:81,c2:90},"4-8-85":{r1:61,c1:91,r2:80,c2:91},"4-8-86":{r1:61,c1:92,r2:80,c2:92},"4-8-87":{r1:60,c1:93,r2:79,c2:93},"4-8-88":{r1:60,c1:94,r2:79,c2:94},"4-8-89":{r1:59,c1:95,r2:78,c2:95},"4-8-90":{r1:59,c1:96,r2:78,c2:96},"4-8-91":{r1:58,c1:97,r2:77,c2:97},"4-8-92":{r1:58,c1:98,r2:77,c2:98},"4-9-100":{r1:43,c1:106,r2:62,c2:106},"4-9-101":{r1:43,c1:107,r2:62,c2:107},"4-9-102":{r1:43,c1:108,r2:62,c2:108},"4-9-103":{r1:42,c1:109,r2:61,c2:109},"4-9-104":{r1:42,c1:110,r2:61,c2:110},"4-9-105":{r1:42,c1:111,r2:61,c2:111},"4-9-106":{r1:42,c1:112,r2:61,c2:112},"4-9-107":{r1:42,c1:113,r2:61,c2:113},"4-9-108":{r1:42,c1:114,r2:61,c2:114},"4-9-109":{r1:41,c1:115,r2:50,c2:115},"4-9-110":{r1:41,c1:116,r2:50,c2:116},"4-9-111":{r1:41,c1:117,r2:50,c2:117},"4-9-112":{r1:41,c1:118,r2:50,c2:118},"4-9-113":{r1:40,c1:119,r2:49,c2:119},"4-9-114":{r1:40,c1:120,r2:49,c2:120},"4-9-115":{r1:40,c1:121,r2:49,c2:121},"4-9-116":{r1:40,c1:122,r2:49,c2:122},"4-9-93":{r1:45,c1:99,r2:54,c2:99},"4-9-94":{r1:45,c1:100,r2:54,c2:100},"4-9-95":{r1:44,c1:101,r2:53,c2:101},"4-9-96":{r1:44,c1:102,r2:53,c2:102},"4-9-97":{r1:44,c1:103,r2:53,c2:103},"4-9-98":{r1:43,c1:104,r2:62,c2:104},"4-9-99":{r1:43,c1:105,r2:62,c2:105}},
+    STS2: {"2-1-1":{r1:5,c1:3,r2:40,c2:3},"2-1-10":{r1:14,c1:12,r2:49,c2:12},"2-1-11":{r1:15,c1:13,r2:50,c2:13},"2-1-12":{r1:16,c1:14,r2:51,c2:14},"2-1-13":{r1:17,c1:15,r2:52,c2:15},"2-1-14":{r1:18,c1:16,r2:53,c2:16},"2-1-15":{r1:19,c1:17,r2:54,c2:17},"2-1-16":{r1:20,c1:18,r2:55,c2:18},"2-1-17":{r1:21,c1:19,r2:56,c2:19},"2-1-18":{r1:22,c1:20,r2:57,c2:20},"2-1-19":{r1:23,c1:21,r2:58,c2:21},"2-1-2":{r1:6,c1:4,r2:41,c2:4},"2-1-20":{r1:24,c1:22,r2:59,c2:22},"2-1-21":{r1:25,c1:23,r2:60,c2:23},"2-1-22":{r1:26,c1:24,r2:61,c2:24},"2-1-23":{r1:27,c1:25,r2:62,c2:25},"2-1-24":{r1:28,c1:26,r2:63,c2:26},"2-1-25":{r1:29,c1:27,r2:64,c2:27},"2-1-26":{r1:30,c1:28,r2:65,c2:28},"2-1-27":{r1:31,c1:29,r2:56,c2:29},"2-1-28":{r1:32,c1:30,r2:57,c2:30},"2-1-29":{r1:33,c1:31,r2:58,c2:31},"2-1-3":{r1:7,c1:5,r2:42,c2:5},"2-1-30":{r1:34,c1:32,r2:59,c2:32},"2-1-31":{r1:35,c1:33,r2:52,c2:33},"2-1-32":{r1:36,c1:34,r2:53,c2:34},"2-1-33":{r1:37,c1:35,r2:54,c2:35},"2-1-34":{r1:38,c1:36,r2:55,c2:36},"2-1-35":{r1:39,c1:37,r2:56,c2:37},"2-1-36":{r1:40,c1:38,r2:49,c2:38},"2-1-37":{r1:41,c1:39,r2:50,c2:39},"2-1-38":{r1:42,c1:40,r2:51,c2:40},"2-1-39":{r1:43,c1:41,r2:52,c2:41},"2-1-4":{r1:8,c1:6,r2:43,c2:6},"2-1-5":{r1:9,c1:7,r2:44,c2:7},"2-1-6":{r1:10,c1:8,r2:45,c2:8},"2-1-7":{r1:11,c1:9,r2:46,c2:9},"2-1-8":{r1:12,c1:10,r2:47,c2:10},"2-1-9":{r1:13,c1:11,r2:48,c2:11},"2-2-10":{r1:50,c1:12,r2:72,c2:12},"2-2-11":{r1:51,c1:13,r2:73,c2:13},"2-2-12":{r1:52,c1:14,r2:74,c2:14},"2-2-13":{r1:53,c1:15,r2:75,c2:15},"2-2-14":{r1:54,c1:16,r2:68,c2:16},"2-2-15":{r1:55,c1:17,r2:69,c2:17},"2-2-16":{r1:56,c1:18,r2:70,c2:18},"2-2-17":{r1:57,c1:19,r2:71,c2:19},"2-2-18":{r1:58,c1:20,r2:64,c2:20},"2-2-19":{r1:59,c1:21,r2:65,c2:21},"2-2-2":{r1:42,c1:4,r2:72,c2:4},"2-2-20":{r1:60,c1:22,r2:66,c2:22},"2-2-21":{r1:61,c1:23,r2:67,c2:23},"2-2-3":{r1:43,c1:5,r2:73,c2:5},"2-2-4":{r1:44,c1:6,r2:74,c2:6},"2-2-5":{r1:45,c1:7,r2:75,c2:7},"2-2-6":{r1:46,c1:8,r2:76,c2:8},"2-2-7":{r1:47,c1:9,r2:77,c2:9},"2-2-8":{r1:48,c1:10,r2:78,c2:10},"2-2-9":{r1:49,c1:11,r2:71,c2:11},"2-3-33":{r1:62,c1:35,r2:71,c2:35},"2-3-34":{r1:63,c1:36,r2:72,c2:36},"2-3-35":{r1:64,c1:37,r2:73,c2:37},"2-3-36":{r1:65,c1:38,r2:74,c2:38},"2-3-37":{r1:58,c1:39,r2:75,c2:39},"2-3-38":{r1:59,c1:40,r2:76,c2:40},"2-3-39":{r1:60,c1:41,r2:77,c2:41},"2-3-40":{r1:61,c1:42,r2:78,c2:42},"2-3-41":{r1:62,c1:43,r2:79,c2:43},"2-3-42":{r1:55,c1:44,r2:80,c2:44},"2-3-43":{r1:56,c1:45,r2:81,c2:45},"2-3-44":{r1:57,c1:46,r2:82,c2:46},"2-3-45":{r1:58,c1:47,r2:83,c2:47},"2-3-46":{r1:50,c1:48,r2:84,c2:48},"2-3-47":{r1:51,c1:49,r2:85,c2:49},"2-3-48":{r1:52,c1:50,r2:86,c2:50},"2-3-49":{r1:53,c1:51,r2:87,c2:51},"2-3-50":{r1:54,c1:52,r2:88,c2:52},"2-3-51":{r1:55,c1:53,r2:89,c2:53},"2-3-52":{r1:56,c1:54,r2:90,c2:54},"2-3-53":{r1:57,c1:55,r2:91,c2:55},"2-3-54":{r1:61,c1:56,r2:92,c2:56},"2-3-55":{r1:59,c1:57,r2:93,c2:57},"2-3-56":{r1:60,c1:58,r2:94,c2:58},"2-3-57":{r1:61,c1:59,r2:95,c2:59},"2-3-58":{r1:62,c1:60,r2:96,c2:60},"2-3-59":{r1:66,c1:61,r2:100,c2:61},"2-3-60":{r1:64,c1:62,r2:98,c2:62},"2-3-61":{r1:65,c1:63,r2:99,c2:63},"2-3-62":{r1:66,c1:64,r2:100,c2:64},"2-3-63":{r1:67,c1:65,r2:93,c2:65},"2-3-64":{r1:68,c1:66,r2:94,c2:66},"2-3-65":{r1:69,c1:67,r2:95,c2:67},"2-3-66":{r1:70,c1:68,r2:96,c2:68},"2-3-67":{r1:74,c1:69,r2:91,c2:69},"2-3-68":{r1:72,c1:70,r2:89,c2:70},"2-3-69":{r1:73,c1:71,r2:90,c2:71},"2-3-70":{r1:74,c1:72,r2:91,c2:72},"2-3-71":{r1:75,c1:73,r2:86,c2:73},"2-3-72":{r1:76,c1:74,r2:87,c2:74},"2-3-73":{r1:77,c1:75,r2:88,c2:75},"2-3-74":{r1:78,c1:76,r2:89,c2:76},"2-4-15":{r1:77,c1:17,r2:85,c2:17},"2-4-16":{r1:78,c1:18,r2:86,c2:18},"2-4-17":{r1:79,c1:19,r2:87,c2:19},"2-4-18":{r1:80,c1:20,r2:88,c2:20},"2-4-19":{r1:81,c1:21,r2:89,c2:21},"2-4-20":{r1:74,c1:22,r2:90,c2:22},"2-4-21":{r1:75,c1:23,r2:91,c2:23},"2-4-22":{r1:76,c1:24,r2:92,c2:24},"2-4-23":{r1:77,c1:25,r2:93,c2:25},"2-4-24":{r1:70,c1:26,r2:94,c2:26},"2-4-25":{r1:71,c1:27,r2:95,c2:27},"2-4-26":{r1:72,c1:28,r2:96,c2:28},"2-4-27":{r1:73,c1:29,r2:97,c2:29},"2-4-28":{r1:67,c1:30,r2:98,c2:30},"2-4-29":{r1:68,c1:31,r2:99,c2:31},"2-4-30":{r1:69,c1:32,r2:100,c2:32},"2-4-31":{r1:70,c1:33,r2:101,c2:33},"2-4-32":{r1:71,c1:34,r2:102,c2:34},"2-4-33":{r1:72,c1:35,r2:103,c2:35},"2-4-34":{r1:73,c1:36,r2:104,c2:36},"2-4-35":{r1:74,c1:37,r2:105,c2:37},"2-4-36":{r1:75,c1:38,r2:106,c2:38},"2-4-37":{r1:76,c1:39,r2:107,c2:39},"2-4-38":{r1:77,c1:40,r2:108,c2:40},"2-4-39":{r1:78,c1:41,r2:109,c2:41},"2-4-40":{r1:79,c1:42,r2:110,c2:42},"2-4-41":{r1:80,c1:43,r2:111,c2:43},"2-4-42":{r1:81,c1:44,r2:112,c2:44},"2-4-43":{r1:82,c1:45,r2:113,c2:45},"2-4-44":{r1:83,c1:46,r2:114,c2:46},"2-4-45":{r1:84,c1:47,r2:115,c2:47},"2-4-46":{r1:85,c1:48,r2:111,c2:48},"2-4-47":{r1:86,c1:49,r2:112,c2:49},"2-4-48":{r1:87,c1:50,r2:113,c2:50},"2-4-49":{r1:88,c1:51,r2:114,c2:51},"2-4-50":{r1:89,c1:52,r2:106,c2:52},"2-4-51":{r1:90,c1:53,r2:107,c2:53},"2-4-52":{r1:91,c1:54,r2:108,c2:54},"2-4-53":{r1:92,c1:55,r2:109,c2:55},"2-4-54":{r1:93,c1:56,r2:104,c2:56},"2-4-55":{r1:94,c1:57,r2:105,c2:57},"2-4-56":{r1:95,c1:58,r2:106,c2:58},"2-4-57":{r1:96,c1:59,r2:107,c2:59}},
   };
 
   // Builds { tableNo: { categoryName: status } } from a snapshot, so the
@@ -1184,6 +1299,7 @@
         pile: pileVal != null ? String(pileVal).trim() : '',
         problem: problem != null ? String(problem).trim() : '(unspecified)',
         status: status,
+        comment: '',
         history: []
       });
     }
@@ -1225,12 +1341,15 @@
       var fixed = fixedCol >= 0 ? row[fixedCol] : null;
       var notComplete = notCompleteCol >= 0 ? row[notCompleteCol] : null;
 
-      // Fixed counts as fully Pass (remediation is treated as the final
-      // step); M-NCR/S-NCR still need work; anything else defaults to
-      // Awaiting Construction, including rows with nothing marked yet.
+      // Confirmed against the sheets' own map-cell coloring and legend
+      // ("Yellow = Minor NC and QC Passed", checked across 640 tables
+      // spanning all three sites with zero exceptions): M-NCR is the
+      // MINOR non-conformance type and still counts as passed — it's
+      // Fixed/Passed's equal, not a step below them. S-NCR is the one
+      // that still blocks pass and needs remediation.
       var status;
-      if (passed || fixed) status = 'pass';
-      else if (mncr || sncr) status = 'awaiting_quality';
+      if (passed || fixed || mncr) status = 'pass';
+      else if (sncr) status = 'awaiting_quality';
       else status = 'awaiting_construction';
 
       var defectParts = [];
@@ -1242,8 +1361,8 @@
       var comments = commentsCol >= 0 && row[commentsCol] != null ? String(row[commentsCol]).trim() : '';
       var problemParts = defectParts.slice();
       if (!problemParts.length){
-        if (mncr) problemParts.push('Major NCR (unspecified)');
-        else if (sncr) problemParts.push('Minor NCR (unspecified)');
+        if (mncr) problemParts.push('Minor NCR (passed)');
+        else if (sncr) problemParts.push('S-NCR (unresolved)');
         else if (fixed) problemParts.push('Fixed (unspecified)');
         else if (notComplete) problemParts.push('Not complete');
       }
@@ -1258,6 +1377,7 @@
         pile: locationVal,
         problem: problem,
         status: status,
+        comment: '',
         history: []
       });
     }
@@ -1919,11 +2039,16 @@
   var lastDashboardDate = null;
   var itemFilterState = { text: '', category: '', location: '', pile: '', problem: '', status: '', showAll: false };
 
-  function statusSelectHtml(catIdx, itemIdx, status){
+  function statusSelectHtml(catIdx, itemIdx, status, category){
+    var hyphenStatus = status.replace(/_/g, '-'); // CSS coloring classes use hyphens; status values use underscores
+    var restricted = myCategoryAccess !== null && myCategoryAccess.indexOf(category) === -1;
+    if (restricted){
+      return '<span class="status-badge-readonly ' + hyphenStatus + '" title="Read-only \u2014 you don\u2019t have edit access to ' + escapeHtml(category) + '">' + statusLabel(status) + '</span>';
+    }
     var opts = STATUS_STAGES.map(function(s){
       return '<option value="' + s.value + '"' + (s.value === status ? ' selected' : '') + '>' + s.label + '</option>';
     }).join('');
-    return '<select class="status-select ' + status + '" data-cat="' + catIdx + '" data-item="' + itemIdx + '">' + opts + '</select>';
+    return '<select class="status-select ' + hyphenStatus + '" data-cat="' + catIdx + '" data-item="' + itemIdx + '">' + opts + '</select>';
   }
 
   function applyItemFilters(items){
@@ -1992,11 +2117,19 @@
 
     container.innerHTML =
       '<table class="items">' +
-        '<thead><tr><th>Category</th><th>Location</th><th>Pile</th><th>Problem</th><th>Status</th></tr></thead>' +
+        '<thead><tr><th>Category</th><th>Location</th><th>Pile</th><th>Problem</th><th>Status</th><th>Comments</th></tr></thead>' +
         '<tbody id="itemsTbody"></tbody>' +
       '</table>';
 
     renderTableBody();
+  }
+
+  function commentFieldHtml(catIdx, itemIdx, comment, category){
+    var restricted = myCategoryAccess !== null && myCategoryAccess.indexOf(category) === -1;
+    if (restricted){
+      return '<span class="comment-readonly">' + (comment ? escapeHtml(comment) : '\u2014') + '</span>';
+    }
+    return '<input type="text" class="comment-input" data-cat="' + catIdx + '" data-item="' + itemIdx + '" value="' + escapeHtml(comment || '') + '" placeholder="Add a comment\u2026">';
   }
 
   function renderTableBody(){
@@ -2004,7 +2137,7 @@
     if (!tbody) return;
     var items = applyItemFilters(currentAllItems);
     if (!items.length){
-      tbody.innerHTML = '<tr><td colspan="5" style="text-align:center; font-family:var(--font-body); color:var(--text-dim); padding:16px;">No items match.</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="6" style="text-align:center; font-family:var(--font-body); color:var(--text-dim); padding:16px;">No items match.</td></tr>';
       return;
     }
     // data-label attributes let the mobile layout show each cell's column
@@ -2015,7 +2148,8 @@
         '<td data-label="Location">' + escapeHtml(it.location) + '</td>' +
         '<td data-label="Pile">' + escapeHtml(it.pile) + '</td>' +
         '<td data-label="Problem" style="font-family:var(--font-body);">' + escapeHtml(it.problem) + '</td>' +
-        '<td data-label="Status">' + statusSelectHtml(it.catIdx, it.itemIdx, it.status) + '</td>' +
+        '<td data-label="Status">' + statusSelectHtml(it.catIdx, it.itemIdx, it.status, it.category) + '</td>' +
+        '<td data-label="Comments">' + commentFieldHtml(it.catIdx, it.itemIdx, it.comment, it.category) + '</td>' +
       '</tr>';
     }).join('');
     tbody.querySelectorAll('select[data-cat]').forEach(function(sel){
@@ -2024,6 +2158,16 @@
         var itemIdx = parseInt(sel.getAttribute('data-item'), 10);
         setItemStatus(catIdx, itemIdx, sel.value);
       });
+    });
+    tbody.querySelectorAll('input.comment-input').forEach(function(inp){
+      var initial = inp.value;
+      inp.addEventListener('blur', function(){
+        if (inp.value === initial) return; // no change made, skip the write
+        var catIdx = parseInt(inp.getAttribute('data-cat'), 10);
+        var itemIdx = parseInt(inp.getAttribute('data-item'), 10);
+        setItemComment(catIdx, itemIdx, inp.value);
+      });
+      inp.addEventListener('keydown', function(e){ if (e.key === 'Enter') inp.blur(); });
     });
   }
 
@@ -2043,6 +2187,26 @@
     item.history.push({ from: oldStatus, to: newStatus, by: currentUserName(), at: new Date().toISOString() });
     item.status = newStatus;
     recomputeTotals(currentRecord);
+    await storeSetShared('rework:' + (currentRecord.site || currentSite) + ':' + currentRecord.date, JSON.stringify(currentRecord));
+
+    var historyToggle = document.getElementById('historyToggle');
+    var preservedHistory = historyToggle ? historyToggle.checked : false;
+
+    await refreshHistory();
+    await renderDashboard(currentRecord.date, preservedHistory);
+  }
+
+  // Saves a comment edit the same way setItemStatus saves a status edit —
+  // persisted immediately and visible to the whole team. Comments aren't
+  // logged to the per-item change history the way status changes are;
+  // that log is specifically about tracking work-stage progress; if it
+  // turns out comments need their own audit trail too, that's a
+  // straightforward addition later.
+  async function setItemComment(catIdx, itemIdx, newComment){
+    if (!currentRecord) return;
+    var item = currentRecord.categories[catIdx].items[itemIdx];
+    if ((item.comment || '') === newComment) return;
+    item.comment = newComment;
     await storeSetShared('rework:' + (currentRecord.site || currentSite) + ':' + currentRecord.date, JSON.stringify(currentRecord));
 
     var historyToggle = document.getElementById('historyToggle');
@@ -2103,7 +2267,7 @@
     var allItems = [];
     current.categories.forEach(function(c, catIdx){
       c.items.forEach(function(it, itemIdx){
-        allItems.push({ catIdx: catIdx, itemIdx: itemIdx, category: c.name, location: it.location, pile: it.pile, problem: it.problem, status: it.status });
+        allItems.push({ catIdx: catIdx, itemIdx: itemIdx, category: c.name, location: it.location, pile: it.pile, problem: it.problem, status: it.status, comment: it.comment });
         if (it.status !== 'pass'){
           var key = it.problem.trim().toLowerCase() || '(unspecified)';
           if (!problemCounts[key]) problemCounts[key] = { label: it.problem.trim() || '(unspecified)', count: 0 };
@@ -2308,6 +2472,7 @@
               Pile: it.pile,
               Problem: it.problem,
               Status: statusLabel(it.status),
+              Comment: it.comment || '',
               'Last Changed By': lastChange ? lastChange.by : '',
               'Last Changed At': lastChange ? new Date(lastChange.at).toLocaleString() : ''
             };
