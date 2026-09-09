@@ -58,6 +58,11 @@
   }
   .site-tab:hover{ border-color:var(--cyan); color:var(--navy); }
   .site-tab.active{ background:var(--navy); border-color:var(--navy); color:var(--on-navy); }
+  .site-tab-all{ border-color:var(--cyan); color:var(--cyan); margin-left:4px; }
+  .site-tab-all:hover{ color:var(--navy); }
+  .site-tab-all.active{ background:var(--cyan); border-color:var(--cyan); color:#fff; }
+
+  tr.site-total-row{ background:#FAFBFA; border-top:2px solid var(--paper-line); }
 
   .who-bar{ display:flex; align-items:center; gap:6px; justify-content:flex-end; margin:-10px 0 8px; font-size:12.5px; color:var(--text-dim); flex-wrap:wrap; }
   .who-bar strong{ color:var(--navy); }
@@ -222,16 +227,16 @@
   }
   .section-sub{ font-size:11.5px; color:var(--text-dim); margin:0 0 16px; }
 
-  .trend-section summary, .problem-section summary, .upload-card summary{
+  .trend-section summary, .problem-section summary, .upload-card summary, .cloud-section summary{
     cursor:pointer; list-style:none; display:flex; align-items:center; justify-content:space-between; gap:12px;
   }
-  .trend-section summary::-webkit-details-marker, .problem-section summary::-webkit-details-marker, .upload-card summary::-webkit-details-marker{ display:none; }
-  .trend-section summary .chevron, .problem-section summary .chevron, .upload-card summary .chevron{
+  .trend-section summary::-webkit-details-marker, .problem-section summary::-webkit-details-marker, .upload-card summary::-webkit-details-marker, .cloud-section summary::-webkit-details-marker{ display:none; }
+  .trend-section summary .chevron, .problem-section summary .chevron, .upload-card summary .chevron, .cloud-section summary .chevron{
     font-family:var(--font-mono); font-size:11px; color:var(--text-dim); transform:rotate(0deg); transition:transform .15s ease; flex-shrink:0;
   }
-  .trend-section[open] summary .chevron, .problem-section[open] summary .chevron, .upload-card[open] summary .chevron{ transform:rotate(180deg); }
+  .trend-section[open] summary .chevron, .problem-section[open] summary .chevron, .upload-card[open] summary .chevron, .cloud-section[open] summary .chevron{ transform:rotate(180deg); }
   .trend-section .section-sub, .problem-section .section-sub, .upload-card .section-sub{ margin-bottom:0; }
-  .trend-section .collapsible-body, .problem-section .collapsible-body, .upload-card .collapsible-body{ margin-top:16px; }
+  .trend-section .collapsible-body, .problem-section .collapsible-body, .upload-card .collapsible-body, .cloud-section .collapsible-body{ margin-top:16px; }
 
   .cat-grid{ display:grid; grid-template-columns:1fr 1fr; gap:16px 32px; }
 
@@ -539,8 +544,9 @@
     <div class="banner error" id="backupErrorBanner"></div>
     <div class="banner success" id="backupSuccessBanner"></div>
 
-    <div class="cloud-section">
-      <h3>Cloud Sync (JSONBin.io)</h3>
+    <details class="cloud-section">
+      <summary><h3 style="margin:0;">Cloud Sync (JSONBin.io)</h3><span class="chevron">\u25bc</span></summary>
+      <div class="collapsible-body">
       <p class="sub">Saves the <strong>full data</strong> — every snapshot, item, and change history — to a shared JSONBin.io bin. Sign up free at jsonbin.io, copy your API key from the API Keys page, and paste it below. The first "Save to Cloud" click creates your team's bin and shows its ID; share that key + ID with teammates (or bake them into this file) so everyone reads and writes the same data.</p>
       <div class="cloud-fields">
         <div class="field"><label for="jsonbinKeyInput">API Key (X-Master-Key) — starts with $2a$10$</label><input type="text" id="jsonbinKeyInput" placeholder="$2a$10$…"></div>
@@ -555,7 +561,8 @@
       <label class="autosave-toggle"><input type="checkbox" id="autoCloudSaveToggle" checked> Auto-save my changes to the cloud (a few seconds after each edit, on this device only)</label>
       <span class="autosave-status" id="autoCloudSaveStatus"></span>
       <div class="cloud-result" id="cloudResult"></div>
-    </div>
+      </div>
+    </details>
   </div>
 
   <div class="card backup-card">
@@ -799,6 +806,7 @@
   // need to be added to this list by hand.
   var KNOWN_SITES = ['STS1', 'STS2', 'STS3', 'STS4'];
   var currentSite = 'STS1';
+  var showAllSitesOverview = false;
 
   // Finds any site with data beyond the four declared above, so a fifth
   // site doesn't need a code change to show up as a tab — it just needs
@@ -820,14 +828,16 @@
     var tabsEl = document.getElementById('siteTabs');
     if (!tabsEl) return;
     var sites = await discoverSites();
-    tabsEl.innerHTML = sites.map(function(s){
-      return '<button type="button" class="site-tab' + (s === currentSite ? ' active' : '') + '" data-site="' + escapeHtml(s) + '">' + escapeHtml(s) + '</button>';
+    var siteTabsHtml = sites.map(function(s){
+      return '<button type="button" class="site-tab' + (!showAllSitesOverview && s === currentSite ? ' active' : '') + '" data-site="' + escapeHtml(s) + '">' + escapeHtml(s) + '</button>';
     }).join('');
-    tabsEl.querySelectorAll('.site-tab').forEach(function(btn){
+    tabsEl.innerHTML = siteTabsHtml + '<button type="button" class="site-tab site-tab-all' + (showAllSitesOverview ? ' active' : '') + '" data-all-sites>ALL</button>';
+    tabsEl.querySelectorAll('.site-tab[data-site]').forEach(function(btn){
       btn.addEventListener('click', async function(){
         var site = btn.getAttribute('data-site');
-        if (site === currentSite) return;
+        if (!showAllSitesOverview && site === currentSite) return;
         currentSite = site;
+        showAllSitesOverview = false;
         storeSet('ui:current_site', site);
         await refreshHistory();
         await showEmptyDashboard();
@@ -835,6 +845,84 @@
         if (records.length) await renderDashboard(records[records.length - 1].date);
       });
     });
+    var allBtn = tabsEl.querySelector('.site-tab-all');
+    if (allBtn){
+      allBtn.addEventListener('click', async function(){
+        if (showAllSitesOverview) return;
+        showAllSitesOverview = true;
+        await renderAllSitesOverview();
+      });
+    }
+  }
+
+  // Combined progress across every site's most recent snapshot — each
+  // site can be on a different date, since they're uploaded on their own
+  // schedules; the table makes that explicit rather than implying they're
+  // all as-of the same day.
+  async function renderAllSitesOverview(){
+    var allRecords = await loadAllSnapshotsAllSites();
+    var latestBySite = {};
+    allRecords.forEach(function(r){
+      var site = r.site || 'STS1';
+      if (!latestBySite[site] || r.date > latestBySite[site].date) latestBySite[site] = r;
+    });
+    var sites = Object.keys(latestBySite).sort();
+
+    if (!sites.length){
+      dashboardMount.innerHTML = '<div class="site-tabs" id="siteTabs"></div><div class="placeholder">No data uploaded for any site yet.</div>';
+      await renderSiteTabs();
+      return;
+    }
+
+    var grandTotal = 0, grandPass = 0, grandReWork = 0, grandAQ = 0, grandAC = 0;
+    var rows = [];
+    sites.forEach(function(site){
+      var record = latestBySite[site];
+      var siteTotal = 0, sitePass = 0, siteReWork = 0, siteAQ = 0, siteAC = 0;
+      record.categories.forEach(function(c){
+        rows.push({ site: site, date: record.date, category: c.name, total: c.total, pass: c.pass, reWork: c.reWork, aq: c.awaitingQuality, ac: c.awaitingConstruction });
+        siteTotal += c.total; sitePass += c.pass; siteReWork += c.reWork; siteAQ += c.awaitingQuality; siteAC += c.awaitingConstruction;
+      });
+      rows.push({ site: site, date: record.date, category: site + ' Total', total: siteTotal, pass: sitePass, reWork: siteReWork, aq: siteAQ, ac: siteAC, isSiteTotal: true });
+      grandTotal += siteTotal; grandPass += sitePass; grandReWork += siteReWork; grandAQ += siteAQ; grandAC += siteAC;
+    });
+
+    var tableRows = rows.map(function(r){
+      var pct = r.total ? Math.round(r.pass / r.total * 100) : 0;
+      return '<tr' + (r.isSiteTotal ? ' class="site-total-row"' : '') + '>' +
+        '<td>' + escapeHtml(r.site) + '</td>' +
+        '<td>' + escapeHtml(r.date) + '</td>' +
+        '<td' + (r.isSiteTotal ? ' style="font-weight:700;"' : '') + '>' + escapeHtml(r.category) + '</td>' +
+        '<td>' + r.total + '</td>' +
+        '<td>' + r.pass + '</td>' +
+        '<td>' + r.reWork + '</td>' +
+        '<td>' + r.aq + '</td>' +
+        '<td>' + r.ac + '</td>' +
+        '<td>' + pct + '%</td>' +
+      '</tr>';
+    }).join('');
+
+    var grandPct = grandTotal ? Math.round(grandPass / grandTotal * 100) : 0;
+
+    var html = '<div class="site-tabs" id="siteTabs"></div>' +
+      '<div class="dash">' +
+        '<div class="dash-header"><h2 style="margin:0;">All Sites Overview</h2><p class="section-sub" style="margin:4px 0 0;">Each site\u2019s most recent snapshot — dates may differ per site, shown in the table below</p></div>' +
+        '<div class="hero-stats">' +
+          '<div class="hero-stat"><p class="label">Total Items</p><div class="value">' + grandTotal + '</div></div>' +
+          '<div class="hero-stat"><p class="label">Pass</p><div class="value">' + grandPass + '</div><div style="font-family:var(--font-mono); font-size:10.5px; color:var(--text-dim); margin-top:6px;">' + grandPct + '% overall</div></div>' +
+          '<div class="hero-stat"><p class="label">Open</p><div class="value">' + (grandTotal - grandPass) + '</div>' +
+            '<div style="font-family:var(--font-mono); font-size:10.5px; color:var(--text-dim); margin-top:6px;">' + grandAC + ' awaiting construction \u00b7 ' + grandReWork + ' re-work \u00b7 ' + grandAQ + ' ready for quality</div>' +
+          '</div>' +
+        '</div>' +
+        '<div class="cat-section">' +
+          '<h4>Progress by Site &amp; Category</h4>' +
+          '<p class="section-sub">Every sheet, every site, from each site\u2019s latest upload</p>' +
+          '<div class="pending-scroll"><table class="items"><thead><tr><th>Site</th><th>Snapshot Date</th><th>Category</th><th>Total</th><th>Pass</th><th>Re-work</th><th>Ready for Quality</th><th>Awaiting Construction</th><th>Pass %</th></tr></thead><tbody>' + tableRows + '</tbody></table></div>' +
+        '</div>' +
+      '</div>';
+
+    dashboardMount.innerHTML = html;
+    await renderSiteTabs();
   }
 
   function todayISO(){
@@ -1255,26 +1343,35 @@
     STS2: {"2-1-1":{r1:5,c1:3,r2:40,c2:3},"2-1-10":{r1:14,c1:12,r2:49,c2:12},"2-1-11":{r1:15,c1:13,r2:50,c2:13},"2-1-12":{r1:16,c1:14,r2:51,c2:14},"2-1-13":{r1:17,c1:15,r2:52,c2:15},"2-1-14":{r1:18,c1:16,r2:53,c2:16},"2-1-15":{r1:19,c1:17,r2:54,c2:17},"2-1-16":{r1:20,c1:18,r2:55,c2:18},"2-1-17":{r1:21,c1:19,r2:56,c2:19},"2-1-18":{r1:22,c1:20,r2:57,c2:20},"2-1-19":{r1:23,c1:21,r2:58,c2:21},"2-1-2":{r1:6,c1:4,r2:41,c2:4},"2-1-20":{r1:24,c1:22,r2:59,c2:22},"2-1-21":{r1:25,c1:23,r2:60,c2:23},"2-1-22":{r1:26,c1:24,r2:61,c2:24},"2-1-23":{r1:27,c1:25,r2:62,c2:25},"2-1-24":{r1:28,c1:26,r2:63,c2:26},"2-1-25":{r1:29,c1:27,r2:64,c2:27},"2-1-26":{r1:30,c1:28,r2:65,c2:28},"2-1-27":{r1:31,c1:29,r2:56,c2:29},"2-1-28":{r1:32,c1:30,r2:57,c2:30},"2-1-29":{r1:33,c1:31,r2:58,c2:31},"2-1-3":{r1:7,c1:5,r2:42,c2:5},"2-1-30":{r1:34,c1:32,r2:59,c2:32},"2-1-31":{r1:35,c1:33,r2:52,c2:33},"2-1-32":{r1:36,c1:34,r2:53,c2:34},"2-1-33":{r1:37,c1:35,r2:54,c2:35},"2-1-34":{r1:38,c1:36,r2:55,c2:36},"2-1-35":{r1:39,c1:37,r2:56,c2:37},"2-1-36":{r1:40,c1:38,r2:49,c2:38},"2-1-37":{r1:41,c1:39,r2:50,c2:39},"2-1-38":{r1:42,c1:40,r2:51,c2:40},"2-1-39":{r1:43,c1:41,r2:52,c2:41},"2-1-4":{r1:8,c1:6,r2:43,c2:6},"2-1-5":{r1:9,c1:7,r2:44,c2:7},"2-1-6":{r1:10,c1:8,r2:45,c2:8},"2-1-7":{r1:11,c1:9,r2:46,c2:9},"2-1-8":{r1:12,c1:10,r2:47,c2:10},"2-1-9":{r1:13,c1:11,r2:48,c2:11},"2-2-10":{r1:50,c1:12,r2:72,c2:12},"2-2-11":{r1:51,c1:13,r2:73,c2:13},"2-2-12":{r1:52,c1:14,r2:74,c2:14},"2-2-13":{r1:53,c1:15,r2:75,c2:15},"2-2-14":{r1:54,c1:16,r2:68,c2:16},"2-2-15":{r1:55,c1:17,r2:69,c2:17},"2-2-16":{r1:56,c1:18,r2:70,c2:18},"2-2-17":{r1:57,c1:19,r2:71,c2:19},"2-2-18":{r1:58,c1:20,r2:64,c2:20},"2-2-19":{r1:59,c1:21,r2:65,c2:21},"2-2-2":{r1:42,c1:4,r2:72,c2:4},"2-2-20":{r1:60,c1:22,r2:66,c2:22},"2-2-21":{r1:61,c1:23,r2:67,c2:23},"2-2-3":{r1:43,c1:5,r2:73,c2:5},"2-2-4":{r1:44,c1:6,r2:74,c2:6},"2-2-5":{r1:45,c1:7,r2:75,c2:7},"2-2-6":{r1:46,c1:8,r2:76,c2:8},"2-2-7":{r1:47,c1:9,r2:77,c2:9},"2-2-8":{r1:48,c1:10,r2:78,c2:10},"2-2-9":{r1:49,c1:11,r2:71,c2:11},"2-3-33":{r1:62,c1:35,r2:71,c2:35},"2-3-34":{r1:63,c1:36,r2:72,c2:36},"2-3-35":{r1:64,c1:37,r2:73,c2:37},"2-3-36":{r1:65,c1:38,r2:74,c2:38},"2-3-37":{r1:58,c1:39,r2:75,c2:39},"2-3-38":{r1:59,c1:40,r2:76,c2:40},"2-3-39":{r1:60,c1:41,r2:77,c2:41},"2-3-40":{r1:61,c1:42,r2:78,c2:42},"2-3-41":{r1:62,c1:43,r2:79,c2:43},"2-3-42":{r1:55,c1:44,r2:80,c2:44},"2-3-43":{r1:56,c1:45,r2:81,c2:45},"2-3-44":{r1:57,c1:46,r2:82,c2:46},"2-3-45":{r1:58,c1:47,r2:83,c2:47},"2-3-46":{r1:50,c1:48,r2:84,c2:48},"2-3-47":{r1:51,c1:49,r2:85,c2:49},"2-3-48":{r1:52,c1:50,r2:86,c2:50},"2-3-49":{r1:53,c1:51,r2:87,c2:51},"2-3-50":{r1:54,c1:52,r2:88,c2:52},"2-3-51":{r1:55,c1:53,r2:89,c2:53},"2-3-52":{r1:56,c1:54,r2:90,c2:54},"2-3-53":{r1:57,c1:55,r2:91,c2:55},"2-3-54":{r1:61,c1:56,r2:92,c2:56},"2-3-55":{r1:59,c1:57,r2:93,c2:57},"2-3-56":{r1:60,c1:58,r2:94,c2:58},"2-3-57":{r1:61,c1:59,r2:95,c2:59},"2-3-58":{r1:62,c1:60,r2:96,c2:60},"2-3-59":{r1:66,c1:61,r2:100,c2:61},"2-3-60":{r1:64,c1:62,r2:98,c2:62},"2-3-61":{r1:65,c1:63,r2:99,c2:63},"2-3-62":{r1:66,c1:64,r2:100,c2:64},"2-3-63":{r1:67,c1:65,r2:93,c2:65},"2-3-64":{r1:68,c1:66,r2:94,c2:66},"2-3-65":{r1:69,c1:67,r2:95,c2:67},"2-3-66":{r1:70,c1:68,r2:96,c2:68},"2-3-67":{r1:74,c1:69,r2:91,c2:69},"2-3-68":{r1:72,c1:70,r2:89,c2:70},"2-3-69":{r1:73,c1:71,r2:90,c2:71},"2-3-70":{r1:74,c1:72,r2:91,c2:72},"2-3-71":{r1:75,c1:73,r2:86,c2:73},"2-3-72":{r1:76,c1:74,r2:87,c2:74},"2-3-73":{r1:77,c1:75,r2:88,c2:75},"2-3-74":{r1:78,c1:76,r2:89,c2:76},"2-4-15":{r1:77,c1:17,r2:85,c2:17},"2-4-16":{r1:78,c1:18,r2:86,c2:18},"2-4-17":{r1:79,c1:19,r2:87,c2:19},"2-4-18":{r1:80,c1:20,r2:88,c2:20},"2-4-19":{r1:81,c1:21,r2:89,c2:21},"2-4-20":{r1:74,c1:22,r2:90,c2:22},"2-4-21":{r1:75,c1:23,r2:91,c2:23},"2-4-22":{r1:76,c1:24,r2:92,c2:24},"2-4-23":{r1:77,c1:25,r2:93,c2:25},"2-4-24":{r1:70,c1:26,r2:94,c2:26},"2-4-25":{r1:71,c1:27,r2:95,c2:27},"2-4-26":{r1:72,c1:28,r2:96,c2:28},"2-4-27":{r1:73,c1:29,r2:97,c2:29},"2-4-28":{r1:67,c1:30,r2:98,c2:30},"2-4-29":{r1:68,c1:31,r2:99,c2:31},"2-4-30":{r1:69,c1:32,r2:100,c2:32},"2-4-31":{r1:70,c1:33,r2:101,c2:33},"2-4-32":{r1:71,c1:34,r2:102,c2:34},"2-4-33":{r1:72,c1:35,r2:103,c2:35},"2-4-34":{r1:73,c1:36,r2:104,c2:36},"2-4-35":{r1:74,c1:37,r2:105,c2:37},"2-4-36":{r1:75,c1:38,r2:106,c2:38},"2-4-37":{r1:76,c1:39,r2:107,c2:39},"2-4-38":{r1:77,c1:40,r2:108,c2:40},"2-4-39":{r1:78,c1:41,r2:109,c2:41},"2-4-40":{r1:79,c1:42,r2:110,c2:42},"2-4-41":{r1:80,c1:43,r2:111,c2:43},"2-4-42":{r1:81,c1:44,r2:112,c2:44},"2-4-43":{r1:82,c1:45,r2:113,c2:45},"2-4-44":{r1:83,c1:46,r2:114,c2:46},"2-4-45":{r1:84,c1:47,r2:115,c2:47},"2-4-46":{r1:85,c1:48,r2:111,c2:48},"2-4-47":{r1:86,c1:49,r2:112,c2:49},"2-4-48":{r1:87,c1:50,r2:113,c2:50},"2-4-49":{r1:88,c1:51,r2:114,c2:51},"2-4-50":{r1:89,c1:52,r2:106,c2:52},"2-4-51":{r1:90,c1:53,r2:107,c2:53},"2-4-52":{r1:91,c1:54,r2:108,c2:54},"2-4-53":{r1:92,c1:55,r2:109,c2:55},"2-4-54":{r1:93,c1:56,r2:104,c2:56},"2-4-55":{r1:94,c1:57,r2:105,c2:57},"2-4-56":{r1:95,c1:58,r2:106,c2:58},"2-4-57":{r1:96,c1:59,r2:107,c2:59}},
   };
 
-  // Builds { tableNo: { categoryName: status } } from a snapshot, so the
-  // map can look up either one category's status or the worst across all
-  // of them for a given table.
+  // Builds { tableNo: { categoryName: { status, procore } } } from a
+  // snapshot, so the map can look up either one category's status/Procore
+  // flag or a combined view across all of them for a given table.
   function buildTableStatusIndex(record){
     var index = {};
     record.categories.forEach(function(c){
       c.items.forEach(function(it){
         if (!index[it.location]) index[it.location] = {};
-        index[it.location][c.name] = it.status;
+        index[it.location][c.name] = { status: it.status, procore: !!it.loadedIntoProcore };
       });
     });
     return index;
   }
-  function worstStatus(byCategoryStatus){
-    var statuses = Object.keys(byCategoryStatus).map(function(k){ return byCategoryStatus[k]; });
+  function worstStatus(byCategoryData){
+    var statuses = Object.keys(byCategoryData).map(function(k){ return byCategoryData[k].status; });
     if (!statuses.length) return null;
     if (statuses.indexOf('awaiting_construction') !== -1) return 'awaiting_construction';
     if (statuses.indexOf('re_work') !== -1) return 're_work';
     if (statuses.indexOf('awaiting_quality') !== -1) return 'awaiting_quality';
     return 'pass';
+  }
+  // A table counts as fully uploaded to Procore only once every category
+  // that has data for it shows the flag set — matching the same
+  // "worst/most-incomplete wins" logic the status view uses, just
+  // inverted (any category not yet uploaded keeps the whole table grey).
+  function allUploadedToProcore(byCategoryData){
+    var keys = Object.keys(byCategoryData);
+    if (!keys.length) return false;
+    return keys.every(function(k){ return byCategoryData[k].procore; });
   }
   var STATUS_MAP_COLOR = { awaiting_construction: 'var(--awaiting)', awaiting_quality: 'var(--pending)', re_work: 'var(--rework)', pass: 'var(--done)' };
 
@@ -1463,7 +1560,7 @@
     return 'pass';
   }
 
-  function renderSiteMapSvg(record, categoryFilter){
+  function renderSiteMapSvg(record, categoryFilter, mode){
     var geometry = SITE_MAP_GEOMETRY[record.site];
     if (!geometry) return null; // no geometry extracted for this site yet
 
@@ -1484,14 +1581,26 @@
     var rects = matched.map(function(t){
       var g = geometry[t];
       var byCat = index[t];
-      var status = categoryFilter ? byCat[categoryFilter] : worstStatus(byCat);
-      var fill = status ? STATUS_MAP_COLOR[status] : '#D7DFDC';
+      var fill, title;
+      if (mode === 'procore'){
+        var uploaded = categoryFilter
+          ? (byCat[categoryFilter] ? byCat[categoryFilter].procore : false)
+          : allUploadedToProcore(byCat);
+        fill = uploaded ? 'var(--done)' : '#D7DFDC';
+        title = t + (uploaded ? ' — Uploaded to Procore' : ' — Not yet uploaded to Procore') +
+          (categoryFilter ? '' : ('\n' + Object.keys(byCat).map(function(k){ return k + ': ' + (byCat[k].procore ? 'Uploaded' : 'Not uploaded'); }).join('\n')));
+      } else {
+        var status = categoryFilter
+          ? (byCat[categoryFilter] ? byCat[categoryFilter].status : null)
+          : worstStatus(byCat);
+        fill = status ? STATUS_MAP_COLOR[status] : '#D7DFDC';
+        title = t + (status ? ' — ' + statusLabel(status) : ' — no data') +
+          (categoryFilter ? '' : ('\n' + Object.keys(byCat).map(function(k){ return k + ': ' + statusLabel(byCat[k].status); }).join('\n')));
+      }
       var x = g.c1 * unitW;
       var y = g.r1 * unitH;
       var w = Math.max(unitW - 1.5, 2);
       var h = Math.max((g.r2 - g.r1 + 1) * unitH - 1.5, 2);
-      var title = t + (status ? ' — ' + statusLabel(status) : ' — no data') +
-        (categoryFilter ? '' : ('\n' + Object.keys(byCat).map(function(k){ return k + ': ' + statusLabel(byCat[k]); }).join('\n')));
       return '<rect class="sitemap-rect" data-table="' + escapeHtml(t) + '" x="' + x + '" y="' + y + '" width="' + w + '" height="' + h + '" rx="1" fill="' + fill + '"><title>' + escapeHtml(title) + '</title></rect>';
     }).join('');
 
@@ -1572,6 +1681,7 @@
     var notCompleteCol = findColIn(header, /^not complete$/i);
     var commentsCol = findColIn(header, /^comments$/i);
     var locationCol = findColIn(header, /^location$/i);
+    var procoreCol = findColIn(header, /loaded into procore/i);
 
     // Defect-type columns vary per category (Module Rails vs. BHAs vs.
     // Torque Tubes all have entirely different lists) — rather than
@@ -1601,11 +1711,13 @@
       // ("Yellow = Minor NC and QC Passed", checked across 640 tables
       // spanning all three sites with zero exceptions): M-NCR is the
       // MINOR non-conformance type and still counts as passed — it's
-      // Fixed/Passed's equal, not a step below them. S-NCR is the one
-      // that still blocks pass and needs remediation.
+      // Fixed/Passed's equal, not a step below them. S-NCR is a fail
+      // that needs real remediation, so it maps to Re-work rather than
+      // Ready for Quality — matching the same mapping used for a
+      // Significant (S) result on the ITC checklists.
       var status;
       if (passed || fixed || mncr) status = 'pass';
-      else if (sncr) status = 'awaiting_quality';
+      else if (sncr) status = 're_work';
       else status = 'awaiting_construction';
 
       var defectParts = [];
@@ -1618,7 +1730,7 @@
       var problemParts = defectParts.slice();
       if (!problemParts.length){
         if (mncr) problemParts.push('Minor NCR (passed)');
-        else if (sncr) problemParts.push('S-NCR (unresolved)');
+        else if (sncr) problemParts.push('S-NCR \u2014 rework required');
         else if (fixed) problemParts.push('Fixed (unspecified)');
         else if (notComplete) problemParts.push('Not complete');
       }
@@ -1626,6 +1738,7 @@
       var problem = problemParts.length ? problemParts.join(', ') : '(no issues recorded)';
 
       var locationVal = locationCol >= 0 && row[locationCol] != null ? String(row[locationCol]).trim() : '';
+      var loadedIntoProcore = !!(procoreCol >= 0 && row[procoreCol]);
 
       items.push({
         sno: null,
@@ -1634,11 +1747,13 @@
         problem: problem,
         status: status,
         comment: '',
+        loadedIntoProcore: loadedIntoProcore,
         history: []
       });
     }
     return items;
   }
+
 
   // Sheet names in these workbooks carry their site as a prefix ("STS1
   // Piling", "STS1 BHAs", ...) — detecting it here means the upload flow
@@ -2349,6 +2464,7 @@
   var currentAllItems = [];   // flattened items for the searchable table, carries catIdx/itemIdx back to currentRecord
   var lastDashboardDate = null;
   var itemFilterState = { text: '', category: '', location: '', pile: '', problem: '', status: '', showAll: false };
+  var siteMapMode = 'status'; // 'status' (QC pass/fail) or 'procore' (Loaded Into Procore)
 
   function statusSelectHtml(catIdx, itemIdx, status, category){
     var hyphenStatus = status.replace(/_/g, '-'); // CSS coloring classes use hyphens; status values use underscores
@@ -2700,7 +2816,7 @@
       '</div>';
     }).join('');
 
-    var siteMapSvg = renderSiteMapSvg(current, itemFilterState.category);
+    var siteMapSvg = renderSiteMapSvg(current, itemFilterState.category, siteMapMode);
     var siteMapOptions = '<option value="">All Categories (Worst Status)</option>' + current.categories.map(function(c){
       return '<option value="' + escapeHtml(c.name) + '"' + (c.name === itemFilterState.category ? ' selected' : '') + '>' + escapeHtml(c.name) + '</option>';
     }).join('');
@@ -2758,11 +2874,23 @@
       '<div style="padding:18px 32px 0;"><div class="site-tabs" id="siteTabs" style="margin-bottom:0;"></div></div>' +
       '<div class="sitemap-section">' +
         '<div class="sitemap-header">' +
-          '<div><h4 style="margin:0;">Site Map</h4><p class="section-sub" style="margin:2px 0 0;">Colored by ' + (itemFilterState.category ? escapeHtml(itemFilterState.category) + ' status' : 'worst status across all categories') + ' — tap a table to see its issues below. On a phone, scroll or pinch to move around the map.</p></div>' +
-          '<select id="siteMapCategorySelect">' + siteMapOptions + '</select>' +
+          '<div><h4 style="margin:0;">Site Map</h4><p class="section-sub" style="margin:2px 0 0;">' +
+            (siteMapMode === 'procore'
+              ? (itemFilterState.category ? escapeHtml(itemFilterState.category) + ' Procore upload status' : 'Green once every category has been uploaded to Procore for that table')
+              : 'Colored by ' + (itemFilterState.category ? escapeHtml(itemFilterState.category) + ' status' : 'worst status across all categories')) +
+            ' — tap a table to see its issues below. On a phone, scroll or pinch to move around the map.</p></div>' +
+          '<div style="display:flex; gap:8px; flex-wrap:wrap;">' +
+            '<select id="siteMapModeSelect">' +
+              '<option value="status"' + (siteMapMode === 'status' ? ' selected' : '') + '>QC Status</option>' +
+              '<option value="procore"' + (siteMapMode === 'procore' ? ' selected' : '') + '>Procore Upload</option>' +
+            '</select>' +
+            '<select id="siteMapCategorySelect">' + siteMapOptions + '</select>' +
+          '</div>' +
         '</div>' +
         (siteMapSvg
-          ? '<div class="status-legend" style="margin-bottom:10px;"><span><i class="awaiting-construction"></i>Awaiting Construction</span><span><i class="re-work"></i>Re-work</span><span><i class="awaiting-quality"></i>Ready for Quality</span><span><i class="pass"></i>Pass</span></div>' +
+          ? (siteMapMode === 'procore'
+              ? '<div class="status-legend" style="margin-bottom:10px;"><span><i class="pass"></i>Uploaded to Procore</span><span style="display:inline-flex; align-items:center; gap:6px;"><i style="background:#D7DFDC;"></i>Not yet uploaded</span></div>'
+              : '<div class="status-legend" style="margin-bottom:10px;"><span><i class="awaiting-construction"></i>Awaiting Construction</span><span><i class="re-work"></i>Re-work</span><span><i class="awaiting-quality"></i>Ready for Quality</span><span><i class="pass"></i>Pass</span></div>') +
             '<div class="sitemap-wrap">' + siteMapSvg + '</div>'
           : '<p class="sitemap-empty">No map geometry on file for ' + escapeHtml(current.site || 'this site') + ' yet \u2014 upload that site\u2019s workbook to me and I can extract it the same way I did for STS1.</p>') +
       '</div>' +
@@ -2819,6 +2947,13 @@
     if (siteMapSelect){
       siteMapSelect.addEventListener('change', function(){
         itemFilterState.category = siteMapSelect.value;
+        renderDashboard(currentRecord.date, historyToggle.checked);
+      });
+    }
+    var siteMapModeSelect = document.getElementById('siteMapModeSelect');
+    if (siteMapModeSelect){
+      siteMapModeSelect.addEventListener('change', function(){
+        siteMapMode = siteMapModeSelect.value;
         renderDashboard(currentRecord.date, historyToggle.checked);
       });
     }
