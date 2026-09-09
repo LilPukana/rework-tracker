@@ -17,6 +17,7 @@
     --paper:#EEF2F1; --paper-line:#D7DFDC;
     --cyan:#F47F1F; --cyan-soft:#FBD2A8;
     --pending:#C8711F; --pending-bg:#FBEADA;
+    --rework:#8B0000; --rework-bg:#FBD9E3;
     --done:#2C8659; --done-bg:#E1F0E7;
     --awaiting:#5C7085; --awaiting-bg:#E6EAED;
     --text:#1C242B; --text-dim:#5C6A72;
@@ -258,6 +259,7 @@
   .bar-track{ height:12px; background:#E4E9E5; position:relative; display:flex; overflow:hidden; }
   .bar-seg.awaiting-construction{ background:var(--awaiting); }
   .bar-seg.awaiting-quality{ background:var(--pending); }
+  .bar-seg.re-work{ background:var(--rework); }
   .bar-seg.pass{ background:var(--done); }
 
   .status-legend{ display:flex; gap:16px; flex-wrap:wrap; margin:10px 0 18px; font-family:var(--font-mono); font-size:11px; color:var(--text-dim); }
@@ -265,6 +267,7 @@
   .status-legend i{ width:9px; height:9px; border-radius:50%; display:inline-block; }
   .status-legend i.awaiting-construction{ background:var(--awaiting); }
   .status-legend i.awaiting-quality{ background:var(--pending); }
+  .status-legend i.re-work{ background:var(--rework); }
   .status-legend i.pass{ background:var(--done); }
 
   .problem-row{ display:flex; align-items:center; gap:12px; margin-bottom:10px; }
@@ -315,9 +318,11 @@
   .status-badge-readonly{ font-family:var(--font-mono); font-size:10.5px; font-weight:600; letter-spacing:.02em; padding:4px 6px; border:1px solid transparent; display:inline-block; }
   .status-select.awaiting-construction{ background:var(--awaiting-bg); color:var(--awaiting); }
   .status-select.awaiting-quality{ background:var(--pending-bg); color:var(--pending); }
+  .status-select.re-work{ background:var(--rework-bg); color:var(--rework); }
   .status-select.pass{ background:var(--done-bg); color:var(--done); }
   .status-badge-readonly.awaiting-construction{ background:var(--awaiting-bg); color:var(--awaiting); }
   .status-badge-readonly.awaiting-quality{ background:var(--pending-bg); color:var(--pending); }
+  .status-badge-readonly.re-work{ background:var(--rework-bg); color:var(--rework); }
   .status-badge-readonly.pass{ background:var(--done-bg); color:var(--done); }
   .status-select:hover{ border-color:currentColor; }
   .status-select:focus{ outline:2px solid var(--cyan); outline-offset:1px; }
@@ -1224,7 +1229,8 @@
   // the time of ITC" style problem text already in the sheets.
   var STATUS_STAGES = [
     { value: 'awaiting_construction', label: 'Awaiting Construction' },
-    { value: 'awaiting_quality', label: 'Awaiting Quality' },
+    { value: 're_work', label: 'Re-work' },
+    { value: 'awaiting_quality', label: 'Ready for Quality' },
     { value: 'pass', label: 'Pass' }
   ];
   function statusLabel(v){
@@ -1266,10 +1272,11 @@
     var statuses = Object.keys(byCategoryStatus).map(function(k){ return byCategoryStatus[k]; });
     if (!statuses.length) return null;
     if (statuses.indexOf('awaiting_construction') !== -1) return 'awaiting_construction';
+    if (statuses.indexOf('re_work') !== -1) return 're_work';
     if (statuses.indexOf('awaiting_quality') !== -1) return 'awaiting_quality';
     return 'pass';
   }
-  var STATUS_MAP_COLOR = { awaiting_construction: 'var(--awaiting)', awaiting_quality: 'var(--pending)', pass: 'var(--done)' };
+  var STATUS_MAP_COLOR = { awaiting_construction: 'var(--awaiting)', awaiting_quality: 'var(--pending)', re_work: 'var(--rework)', pass: 'var(--done)' };
 
   // ---------- ITC checklists ----------
   // Digital equivalents of the field team's per-table Inspection Test
@@ -1443,14 +1450,15 @@
     return null;
   }
 
-  // Worst-result-wins, matching the same severity order confirmed against
-  // the QC workbooks: incomplete blocks everything; a significant (S)
-  // finding still needs real rework; validation-required (V) isn't a
-  // pass yet either; P and M both count as Pass (M is a passed item with
-  // a minor note, same convention as M-NCR in the QC Status workbook).
+  // Worst-result-wins: incomplete blocks everything; a significant (S)
+  // finding now maps to the dedicated Re-work status, since "needs real
+  // remediation" is exactly what that status means; validation-required
+  // (V) maps to Ready for Quality, since it just needs re-checking, not
+  // fixing; P and M both count as Pass (M is a passed item with a minor
+  // note, same convention as M-NCR in the QC Status workbook).
   function itcOverallStatus(codes){
     if (codes.indexOf('I') !== -1) return 'awaiting_construction';
-    if (codes.indexOf('S') !== -1) return 'awaiting_quality';
+    if (codes.indexOf('S') !== -1) return 're_work';
     if (codes.indexOf('V') !== -1) return 'awaiting_quality';
     return 'pass';
   }
@@ -1682,19 +1690,21 @@
   // and grand totals from each item's current status. Called after import
   // and after every manual status edit.
   function recomputeTotals(record){
-    var grandTotal = 0, grandPass = 0, grandAwaitingQuality = 0, grandAwaitingConstruction = 0;
+    var grandTotal = 0, grandPass = 0, grandAwaitingQuality = 0, grandAwaitingConstruction = 0, grandReWork = 0;
     record.categories.forEach(function(c){
       c.total = c.items.length;
       c.pass = c.items.filter(function(it){ return it.status === 'pass'; }).length;
       c.awaitingQuality = c.items.filter(function(it){ return it.status === 'awaiting_quality'; }).length;
       c.awaitingConstruction = c.items.filter(function(it){ return it.status === 'awaiting_construction'; }).length;
+      c.reWork = c.items.filter(function(it){ return it.status === 're_work'; }).length;
       grandTotal += c.total; grandPass += c.pass;
-      grandAwaitingQuality += c.awaitingQuality; grandAwaitingConstruction += c.awaitingConstruction;
+      grandAwaitingQuality += c.awaitingQuality; grandAwaitingConstruction += c.awaitingConstruction; grandReWork += c.reWork;
     });
     record.grandTotal = grandTotal;
     record.grandPass = grandPass;
     record.grandAwaitingQuality = grandAwaitingQuality;
     record.grandAwaitingConstruction = grandAwaitingConstruction;
+    record.grandReWork = grandReWork;
     record.grandOpen = grandTotal - grandPass;
     return record;
   }
@@ -2500,7 +2510,7 @@
     var oldStatus = item.status;
     if (oldStatus === newStatus) return;
     if (!item.history) item.history = [];
-    item.history.push({ from: oldStatus, to: newStatus, by: currentUserName(), at: new Date().toISOString() });
+    item.history.push({ field: 'status', from: oldStatus, to: newStatus, by: currentUserName(), at: new Date().toISOString() });
     item.status = newStatus;
     recomputeTotals(currentRecord);
     await storeSetShared('rework:' + (currentRecord.site || currentSite) + ':' + currentRecord.date, JSON.stringify(currentRecord));
@@ -2514,15 +2524,16 @@
   }
 
   // Saves a comment edit the same way setItemStatus saves a status edit —
-  // persisted immediately and visible to the whole team. Comments aren't
-  // logged to the per-item change history the way status changes are;
-  // that log is specifically about tracking work-stage progress; if it
-  // turns out comments need their own audit trail too, that's a
-  // straightforward addition later.
+  // persisted immediately, visible to the whole team, and now logged to
+  // the same per-item history array (tagged field:'comment' to
+  // distinguish it from a status change in the log).
   async function setItemComment(catIdx, itemIdx, newComment){
     if (!currentRecord) return;
     var item = currentRecord.categories[catIdx].items[itemIdx];
-    if ((item.comment || '') === newComment) return;
+    var oldComment = item.comment || '';
+    if (oldComment === newComment) return;
+    if (!item.history) item.history = [];
+    item.history.push({ field: 'comment', from: oldComment, to: newComment, by: currentUserName(), at: new Date().toISOString() });
     item.comment = newComment;
     await storeSetShared('rework:' + (currentRecord.site || currentSite) + ':' + currentRecord.date, JSON.stringify(currentRecord));
     scheduleAutoCloudSave();
@@ -2631,7 +2642,7 @@
     item.itc = { criteria: criteria, minorNc: minorNc, majorNc: majorNc, checkedBy: checkedBy, date: date, filledAt: new Date().toISOString() };
     if (oldStatus !== newStatus){
       if (!item.history) item.history = [];
-      item.history.push({ from: oldStatus, to: newStatus, by: (checkedBy || currentUserName()) + ' (ITC checklist)', at: new Date().toISOString() });
+      item.history.push({ field: 'status', from: oldStatus, to: newStatus, by: (checkedBy || currentUserName()) + ' (ITC checklist)', at: new Date().toISOString() });
       item.status = newStatus;
     }
 
@@ -2676,11 +2687,13 @@
       var cPct = c.total ? Math.round(c.pass / c.total * 100) : 0;
       var wAC = c.total ? (c.awaitingConstruction / c.total * 100) : 0;
       var wAQ = c.total ? (c.awaitingQuality / c.total * 100) : 0;
+      var wRW = c.total ? (c.reWork / c.total * 100) : 0;
       var wP = c.total ? (c.pass / c.total * 100) : 0;
       return '<div class="cat-row">' +
         '<div class="cat-name"><span>' + escapeHtml(c.name) + '</span><span class="cat-count">' + c.pass + '/' + c.total + ' pass (' + cPct + '%)</span></div>' +
         '<div class="bar-track">' +
           '<div class="bar-seg awaiting-construction" style="width:' + wAC + '%;"></div>' +
+          '<div class="bar-seg re-work" style="width:' + wRW + '%;"></div>' +
           '<div class="bar-seg awaiting-quality" style="width:' + wAQ + '%;"></div>' +
           '<div class="bar-seg pass" style="width:' + wP + '%;"></div>' +
         '</div>' +
@@ -2733,12 +2746,12 @@
           '<div class="hero-stat"><p class="label">Total Items</p><div class="value">' + current.grandTotal + '</div></div>' +
           '<div class="hero-stat"><p class="label">Passed</p><div class="value">' + current.grandPass + '</div></div>' +
           '<div class="hero-stat"><p class="label">Open</p><div class="value">' + current.grandOpen + '</div>' + deltaHtml +
-            '<div style="font-family:var(--font-mono); font-size:10.5px; color:var(--text-dim); margin-top:6px;">' + current.grandAwaitingConstruction + ' awaiting construction · ' + current.grandAwaitingQuality + ' awaiting quality</div>' +
+            '<div style="font-family:var(--font-mono); font-size:10.5px; color:var(--text-dim); margin-top:6px;">' + current.grandAwaitingConstruction + ' awaiting construction \u00b7 ' + current.grandReWork + ' re-work \u00b7 ' + current.grandAwaitingQuality + ' ready for quality</div>' +
           '</div>' +
         '</div>' +
       '</div>' +
       '<div class="cat-section"><h4>By Category</h4><p class="section-sub">Progress per sheet</p>' +
-        '<div class="status-legend"><span><i class="awaiting-construction"></i>Awaiting Construction</span><span><i class="awaiting-quality"></i>Awaiting Quality</span><span><i class="pass"></i>Pass</span></div>' +
+        '<div class="status-legend"><span><i class="awaiting-construction"></i>Awaiting Construction</span><span><i class="re-work"></i>Re-work</span><span><i class="awaiting-quality"></i>Ready for Quality</span><span><i class="pass"></i>Pass</span></div>' +
         '<div class="cat-grid">' + catGridHtml + '</div></div>' +
       '<details class="trend-section"><summary><div><h4>Trend</h4><p class="section-sub">Pass % across snapshots</p></div><span class="chevron">\u25bc</span></summary><div class="collapsible-body">' + svgTrendPct(records) + '</div></details>' +
       '<details class="problem-section"><summary><div><h4>Top Open Issues</h4><p class="section-sub">Most common problem types not yet passed</p></div><span class="chevron">\u25bc</span></summary><div class="collapsible-body">' + problemHtml + '</div></details>' +
@@ -2749,7 +2762,7 @@
           '<select id="siteMapCategorySelect">' + siteMapOptions + '</select>' +
         '</div>' +
         (siteMapSvg
-          ? '<div class="status-legend" style="margin-bottom:10px;"><span><i class="awaiting-construction"></i>Awaiting Construction</span><span><i class="awaiting-quality"></i>Awaiting Quality</span><span><i class="pass"></i>Pass</span></div>' +
+          ? '<div class="status-legend" style="margin-bottom:10px;"><span><i class="awaiting-construction"></i>Awaiting Construction</span><span><i class="re-work"></i>Re-work</span><span><i class="awaiting-quality"></i>Ready for Quality</span><span><i class="pass"></i>Pass</span></div>' +
             '<div class="sitemap-wrap">' + siteMapSvg + '</div>'
           : '<p class="sitemap-empty">No map geometry on file for ' + escapeHtml(current.site || 'this site') + ' yet \u2014 upload that site\u2019s workbook to me and I can extract it the same way I did for STS1.</p>') +
       '</div>' +
@@ -2787,12 +2800,12 @@
     showAllToggle.checked = itemFilterState.showAll;
     historyToggle.checked = !!presetHistory;
     renderPendingTable();
-    if (historyToggle.checked){ changelogWrap.style.display = 'block'; renderChangeLog(current); }
+    if (historyToggle.checked){ changelogWrap.style.display = 'block'; renderChangeLog(); }
     filterInput.addEventListener('input', function(){ itemFilterState.text = filterInput.value; renderTableBody(); });
     showAllToggle.addEventListener('change', function(){ itemFilterState.showAll = showAllToggle.checked; renderTableBody(); });
     historyToggle.addEventListener('change', function(){
       changelogWrap.style.display = historyToggle.checked ? 'block' : 'none';
-      if (historyToggle.checked) renderChangeLog(current);
+      if (historyToggle.checked) renderChangeLog();
     });
     document.getElementById('exportExcelBtn').addEventListener('click', function(){ exportSnapshotToExcel(current, records); });
     var jumpToMapBtn = document.getElementById('jumpToMapBtn');
@@ -2830,34 +2843,69 @@
 
   // Flat, most-recent-first audit log of every status change recorded
   // against this snapshot, across all categories.
-  function renderChangeLog(record){
+  // Gathers every logged status change across every site and every
+  // snapshot date — a true global activity log, not scoped to whichever
+  // snapshot happens to be open. Still shown via the same "Show change
+  // history" toggle in the Item List, just with a wider view underneath.
+  // Entries logged before comment-tracking existed have no "field" —
+  // treated as 'status' for those, since that was the only kind back then.
+  function truncateForLog(s, max){
+    s = String(s || '');
+    return s.length > max ? s.slice(0, max) + '…' : s;
+  }
+  function historyEntryDisplay(h, truncate){
+    var field = h.field || 'status';
+    if (field === 'comment'){
+      var from = h.from || '(empty)';
+      var to = h.to || '(empty)';
+      return {
+        fieldLabel: 'Comment',
+        from: truncate ? truncateForLog(from, 60) : from,
+        to: truncate ? truncateForLog(to, 60) : to
+      };
+    }
+    return { fieldLabel: 'Status', from: statusLabel(h.from), to: statusLabel(h.to) };
+  }
+
+  async function renderChangeLog(){
     var container = document.getElementById('changelogWrap');
     if (!container) return;
+    container.innerHTML = '<p class="empty-note">Loading…</p>';
+
+    var allRecords = await loadAllSnapshotsAllSites();
     var entries = [];
-    record.categories.forEach(function(c){
-      c.items.forEach(function(it){
-        (it.history || []).forEach(function(h){
-          entries.push({
-            category: c.name, location: it.location, pile: it.pile,
-            from: statusLabel(h.from), to: statusLabel(h.to), by: h.by, at: h.at
+    allRecords.forEach(function(record){
+      var site = record.site || 'STS1';
+      record.categories.forEach(function(c){
+        c.items.forEach(function(it){
+          (it.history || []).forEach(function(h){
+            var disp = historyEntryDisplay(h, true);
+            entries.push({
+              site: site, date: record.date, category: c.name, location: it.location, pile: it.pile,
+              fieldLabel: disp.fieldLabel, from: disp.from, to: disp.to, by: h.by, at: h.at
+            });
           });
         });
       });
     });
+
     if (!entries.length){
-      container.innerHTML = '<p class="empty-note">No status changes recorded yet on this snapshot.</p>';
+      container.innerHTML = '<p class="empty-note">No changes recorded yet, anywhere.</p>';
       return;
     }
     entries.sort(function(a, b){ return new Date(b.at) - new Date(a.at); });
     var rows = entries.map(function(e){
       return '<tr><td>' + new Date(e.at).toLocaleString() + '</td>' +
         '<td class="who">' + escapeHtml(e.by) + '</td>' +
+        '<td class="cat">' + escapeHtml(e.site) + '</td>' +
+        '<td>' + escapeHtml(e.date) + '</td>' +
         '<td class="cat">' + escapeHtml(e.category) + '</td>' +
         '<td>' + escapeHtml(e.location) + '</td>' +
         '<td>' + escapeHtml(e.pile) + '</td>' +
+        '<td>' + escapeHtml(e.fieldLabel) + '</td>' +
         '<td class="change">' + escapeHtml(e.from) + '<span class="arrow">→</span>' + escapeHtml(e.to) + '</td></tr>';
     }).join('');
-    container.innerHTML = '<table class="changelog"><thead><tr><th>When</th><th>By</th><th>Category</th><th>Location</th><th>Pile</th><th>Change</th></tr></thead><tbody>' + rows + '</tbody></table>';
+    container.innerHTML = '<table class="changelog"><thead><tr><th>When</th><th>By</th><th>Site</th><th>Snapshot Date</th><th>Category</th><th>Location</th><th>Pile</th><th>Field</th><th>Change</th></tr></thead><tbody>' + rows + '</tbody></table>';
   }
 
   // ---------- export ----------
@@ -2876,7 +2924,8 @@
       Category: 'ALL',
       Total: record.grandTotal,
       Pass: record.grandPass,
-      'Awaiting Quality': record.grandAwaitingQuality,
+      'Ready for Quality': record.grandAwaitingQuality,
+      'Re-work': record.grandReWork,
       'Awaiting Construction': record.grandAwaitingConstruction,
       'Pass %': record.grandTotal ? Math.round(record.grandPass / record.grandTotal * 100) : 0
     }];
@@ -2885,7 +2934,8 @@
         Category: c.name,
         Total: c.total,
         Pass: c.pass,
-        'Awaiting Quality': c.awaitingQuality,
+        'Ready for Quality': c.awaitingQuality,
+        'Re-work': c.reWork,
         'Awaiting Construction': c.awaitingConstruction,
         'Pass %': c.total ? Math.round(c.pass / c.total * 100) : 0
       });
@@ -2897,7 +2947,8 @@
     record.categories.forEach(function(c){
       var rows = c.items.length
         ? c.items.map(function(it){
-            var lastChange = (it.history && it.history.length) ? it.history[it.history.length - 1] : null;
+            var statusHistory = (it.history || []).filter(function(h){ return (h.field || 'status') === 'status'; });
+            var lastChange = statusHistory.length ? statusHistory[statusHistory.length - 1] : null;
             return {
               Sno: it.sno != null ? it.sno : '',
               Location: it.location,
@@ -2916,6 +2967,34 @@
       XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(rows), name);
     });
 
+    // Change Log sheet: every logged status and comment change on this
+    // snapshot specifically (not other sites or dates — this export is
+    // scoped to the snapshot currently open).
+    var changeLogRows = [];
+    record.categories.forEach(function(c){
+      c.items.forEach(function(it){
+        (it.history || []).forEach(function(h){
+          var disp = historyEntryDisplay(h, false);
+          changeLogRows.push({
+            _at: h.at,
+            When: new Date(h.at).toLocaleString(),
+            By: h.by,
+            Category: c.name,
+            Location: it.location,
+            Pile: it.pile,
+            Field: disp.fieldLabel,
+            From: disp.from,
+            To: disp.to
+          });
+        });
+      });
+    });
+    if (changeLogRows.length){
+      changeLogRows.sort(function(a, b){ return new Date(b._at) - new Date(a._at); });
+      changeLogRows.forEach(function(r){ delete r._at; });
+      XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(changeLogRows), 'Change Log');
+    }
+
     // History sheet: pass-rate trend across every stored snapshot, for context
     if (allRecords && allRecords.length > 1){
       var historyRows = allRecords.map(function(r){
@@ -2923,7 +3002,8 @@
           Date: r.date,
           Total: r.grandTotal,
           Pass: r.grandPass,
-          'Awaiting Quality': r.grandAwaitingQuality,
+          'Ready for Quality': r.grandAwaitingQuality,
+          'Re-work': r.grandReWork,
           'Awaiting Construction': r.grandAwaitingConstruction,
           'Pass %': r.grandTotal ? Math.round(r.grandPass / r.grandTotal * 100) : 0
         };
