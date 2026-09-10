@@ -2107,17 +2107,42 @@
   var autoCloudSaveEnabled = true;
   var autoCloudSaveTimer = null;
 
-  // Debounced rather than instant: JSONBin has no partial-update API, so
-  // every save re-uploads the entire dataset (every site, every
-  // snapshot). Saving on every keystroke/click would mean constant
-  // redundant traffic and a higher chance two people editing at once
-  // silently overwrite each other. Waiting a few quiet seconds after the
-  // last edit batches rapid changes into one save instead.
+  // Debounced rather than instant: even with a proper merge (below),
+  // saving on every keystroke/click would mean constant redundant
+  // traffic. Waiting a few quiet seconds after the last edit batches
+  // rapid changes into one save instead.
   function scheduleAutoCloudSave(){
     if (!autoCloudSaveEnabled) return;
     if (autoCloudSaveTimer) clearTimeout(autoCloudSaveTimer);
     autoCloudSaveStatus.textContent = 'Change pending \u2014 will auto-save shortly\u2026';
     autoCloudSaveTimer = setTimeout(performAutoCloudSave, 4000);
+  }
+
+  // The core fix for concurrent editing: fetches the LATEST cloud data
+  // right before saving, and merges in only the specific snapshot(s)
+  // passed in — rather than overwriting the whole cloud dataset with
+  // this device's local copy. If someone else edited a different site or
+  // date in the meantime, fetching fresh means their change is still
+  // sitting in "existing" and survives the merge untouched. This doesn't
+  // fully protect two people editing the exact same table at the exact
+  // same moment (whoever saves last still wins for that one snapshot),
+  // but that's a much narrower window than the old "overwrite
+  // everything" behavior.
+  async function mergeSnapshotsToCloud(apiKey, binId, snapshotsToMerge){
+    var existing = await fetchCloudRecord(apiKey, binId).catch(function(){ return null; });
+    var payload = existing || { exportedFrom: 'Rework Tracker', exportedAt: new Date().toISOString(), snapshots: [] };
+    if (!Array.isArray(payload.snapshots)) payload.snapshots = [];
+
+    snapshotsToMerge.forEach(function(snap){
+      var site = snap.site || 'STS1';
+      var idx = payload.snapshots.findIndex(function(s){ return (s.site || 'STS1') === site && s.date === snap.date; });
+      if (idx === -1) payload.snapshots.push(snap);
+      else payload.snapshots[idx] = snap;
+    });
+
+    payload.exportedAt = new Date().toISOString();
+    await jsonbinRequest('PUT', JSONBIN_BASE + '/' + binId, apiKey, payload);
+    return payload;
   }
 
   async function performAutoCloudSave(){
@@ -2127,13 +2152,13 @@
       autoCloudSaveStatus.textContent = 'Auto-save needs both an API key and a Bin ID above.';
       return;
     }
+    if (!currentRecord){
+      autoCloudSaveStatus.textContent = '';
+      return;
+    }
     autoCloudSaveStatus.textContent = 'Auto-saving\u2026';
     try {
-      var payload = await buildBackupPayload();
-      var existing = await fetchCloudRecord(apiKey, binId).catch(function(){ return null; });
-      if (existing && Array.isArray(existing.approvedEmails)) payload.approvedEmails = existing.approvedEmails;
-      if (existing && existing.categoryPermissions && typeof existing.categoryPermissions === 'object') payload.categoryPermissions = existing.categoryPermissions;
-      await jsonbinRequest('PUT', JSONBIN_BASE + '/' + binId, apiKey, payload);
+      await mergeSnapshotsToCloud(apiKey, binId, [currentRecord]);
       var now = new Date();
       autoCloudSaveStatus.textContent = 'Auto-saved to cloud at ' + now.toLocaleTimeString();
     } catch(err){
@@ -2208,16 +2233,13 @@
     try {
       var payload = await buildBackupPayload();
       if (binId){
-        // Preserve approvedEmails and categoryPermissions — a plain PUT
-        // would otherwise silently wipe both out, since JSONBin replaces
-        // the whole record rather than merging.
-        try {
-          var existing = await fetchCloudRecord(apiKey, binId);
-          if (existing && Array.isArray(existing.approvedEmails)) payload.approvedEmails = existing.approvedEmails;
-          if (existing && existing.categoryPermissions && typeof existing.categoryPermissions === 'object') payload.categoryPermissions = existing.categoryPermissions;
-        } catch(e){ /* if this fails, proceed without it rather than blocking the save */ }
-        await jsonbinRequest('PUT', JSONBIN_BASE + '/' + binId, apiKey, payload);
-        showCloudResult('Saved ' + payload.snapshots.length + ' snapshot' + (payload.snapshots.length === 1 ? '' : 's') + ' to bin <strong>' + escapeHtml(binId) + '</strong>.');
+        // Merge rather than overwrite: fetches the latest cloud data and
+        // upserts each snapshot this device knows about, so a snapshot
+        // that exists in the cloud but was never loaded on this device
+        // (e.g. someone else uploaded it from theirs) survives instead
+        // of being wiped by a full replace.
+        var merged = await mergeSnapshotsToCloud(apiKey, binId, payload.snapshots);
+        showCloudResult('Saved ' + payload.snapshots.length + ' snapshot' + (payload.snapshots.length === 1 ? '' : 's') + ' to bin <strong>' + escapeHtml(binId) + '</strong> (bin now has ' + merged.snapshots.length + ' total).');
       } else {
         var res = await fetch(JSONBIN_BASE, {
           method: 'POST',
@@ -2628,6 +2650,7 @@
     if (!item.history) item.history = [];
     item.history.push({ field: 'status', from: oldStatus, to: newStatus, by: currentUserName(), at: new Date().toISOString() });
     item.status = newStatus;
+    currentRecord.lastModifiedAt = new Date().toISOString();
     recomputeTotals(currentRecord);
     await storeSetShared('rework:' + (currentRecord.site || currentSite) + ':' + currentRecord.date, JSON.stringify(currentRecord));
     scheduleAutoCloudSave();
@@ -2651,6 +2674,7 @@
     if (!item.history) item.history = [];
     item.history.push({ field: 'comment', from: oldComment, to: newComment, by: currentUserName(), at: new Date().toISOString() });
     item.comment = newComment;
+    currentRecord.lastModifiedAt = new Date().toISOString();
     await storeSetShared('rework:' + (currentRecord.site || currentSite) + ':' + currentRecord.date, JSON.stringify(currentRecord));
     scheduleAutoCloudSave();
 
@@ -2763,6 +2787,7 @@
     }
 
     recomputeTotals(currentRecord);
+    currentRecord.lastModifiedAt = new Date().toISOString();
     await storeSetShared('rework:' + (currentRecord.site || currentSite) + ':' + currentRecord.date, JSON.stringify(currentRecord));
     scheduleAutoCloudSave();
 
@@ -3153,6 +3178,57 @@
     }
   }
 
+  // Runs quietly in the background so everyone's local view stays close
+  // to real-time, shrinking the window where two people are working from
+  // different starting points. Only pulls a cloud snapshot into local
+  // storage if it's actually newer than what's here (by lastModifiedAt,
+  // falling back to uploadedAt for snapshots saved before that field
+  // existed) — so it never clobbers a local edit that hasn't auto-saved
+  // yet. Silent by design: a background convenience refresh isn't worth
+  // interrupting anyone over if it fails.
+  async function periodicCloudRefresh(){
+    var apiKey = jsonbinKeyInput.value.trim();
+    var binId = jsonbinBinIdInput.value.trim();
+    if (!apiKey || !binId) return;
+
+    try {
+      var cloudData = await fetchCloudRecord(apiKey, binId);
+      if (!cloudData || !Array.isArray(cloudData.snapshots)) return;
+
+      var touchedCurrentlyViewed = false;
+      for (var i = 0; i < cloudData.snapshots.length; i++){
+        var cloudSnap = cloudData.snapshots[i];
+        if (!cloudSnap || !cloudSnap.date) continue;
+        var site = cloudSnap.site || 'STS1';
+        var key = 'rework:' + site + ':' + cloudSnap.date;
+        var localRaw = await storeGetShared(key);
+        var local = localRaw && localRaw.value ? JSON.parse(localRaw.value) : null;
+
+        var cloudModified = cloudSnap.lastModifiedAt || cloudSnap.uploadedAt || '';
+        var localModified = local ? (local.lastModifiedAt || local.uploadedAt || '') : '';
+
+        if (!local || (cloudModified && new Date(cloudModified) > new Date(localModified))){
+          await storeSetShared(key, JSON.stringify(cloudSnap));
+          if (currentRecord && (currentRecord.site || currentSite) === site && currentRecord.date === cloudSnap.date){
+            touchedCurrentlyViewed = true;
+          }
+        }
+      }
+
+      if (touchedCurrentlyViewed && currentRecord){
+        var historyToggle = document.getElementById('historyToggle');
+        var preservedHistory = historyToggle ? historyToggle.checked : false;
+        await refreshHistory();
+        await renderDashboard(currentRecord.date, preservedHistory);
+        if (autoCloudSaveStatus) autoCloudSaveStatus.textContent = 'Synced newer changes from the cloud at ' + new Date().toLocaleTimeString();
+      } else {
+        await refreshHistory();
+      }
+    } catch(e){
+      // Background refresh — fails silently rather than interrupting anyone.
+    }
+  }
+
   (async function initSite(){
     var saved = await storeGet('ui:current_site');
     if (saved && saved.value) currentSite = saved.value; // works for both the default four and any auto-discovered site
@@ -3160,6 +3236,7 @@
     initGates();
     refreshHistory();
     checkReportNudge();
+    setInterval(periodicCloudRefresh, 45000);
   })();
 })();
 </script>
