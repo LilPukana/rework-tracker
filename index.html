@@ -3236,7 +3236,33 @@
     initGates();
     refreshHistory();
     checkReportNudge();
-    setInterval(periodicCloudRefresh, 45000);
+
+    // Every device polling every 45 seconds indefinitely — including tabs
+    // sitting open and unwatched in the background — burns through a
+    // metered request plan far faster than it needs to. This only polls
+    // while the tab is actually visible, and does one catch-up check the
+    // moment it becomes visible again rather than waiting for the next
+    // tick, so returning to the tab still feels close to real-time
+    // without paying for requests nobody's there to benefit from.
+    var periodicRefreshTimer = null;
+    function startPeriodicRefresh(){
+      if (periodicRefreshTimer) return;
+      periodicRefreshTimer = setInterval(periodicCloudRefresh, 300000); // 5 minutes
+    }
+    function stopPeriodicRefresh(){
+      if (!periodicRefreshTimer) return;
+      clearInterval(periodicRefreshTimer);
+      periodicRefreshTimer = null;
+    }
+    if (!document.hidden) startPeriodicRefresh();
+    document.addEventListener('visibilitychange', function(){
+      if (document.hidden){
+        stopPeriodicRefresh();
+      } else {
+        periodicCloudRefresh();
+        startPeriodicRefresh();
+      }
+    });
   })();
 })();
 </script>
