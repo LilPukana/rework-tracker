@@ -385,7 +385,7 @@
     input[type=text], input[type=email], input[type=date], input[type=number],
     select, .item-filters input, .item-filters select, .status-select,
     .cloud-fields input, .who-bar input, .filetable input, .filetable select,
-    #loginEmailInput, #jsonbinKeyInput, #jsonbinBinIdInput, #connectBinIdInput, #connectApiKeyInput,
+    #loginEmailInput, #jsonbinKeyInput, #jsonbinBinConfig, #jsonbinBinSTS1, #jsonbinBinSTS2, #jsonbinBinSTS3, #jsonbinBinSTS4, #connectBinIdInput, #connectApiKeyInput,
     #reportRecipientsInput, #reportCadenceInput, .comment-input{
       font-size:16px !important;
     }
@@ -404,6 +404,8 @@
     .who-bar input{ width:100%; }
     .cloud-fields{ flex-direction:column; }
     .cloud-fields .field{ min-width:0; }
+    .access-row{ flex-wrap:wrap; gap:8px 0; }
+    .access-row > span:last-child{ width:100%; justify-content:flex-end; }
 
     .filetable button.remove{ font-size:22px; padding:6px 10px; }
     table.hist button, .link-btn{ padding:6px 4px; }
@@ -441,9 +443,9 @@
   <div class="login-card">
     <p class="eyebrow">Field QA — Punch List</p>
     <h2>Connect</h2>
-    <p class="sub">Enter your team's shared Bin ID and API key to sync data. This browser will remember them for next time — as long as you keep reopening this exact file.</p>
+    <p class="sub">Enter your team's Config Bin ID and API key to sync data. This is the small shared bin that controls who can sign in — each site's own data bin is configured separately further down once you're in. This browser will remember them for next time — as long as you keep reopening this exact file.</p>
     <form id="connectForm">
-      <input type="text" id="connectBinIdInput" name="binid" placeholder="Bin ID" autocomplete="off">
+      <input type="text" id="connectBinIdInput" name="binid" placeholder="Config Bin ID" autocomplete="off">
       <input type="text" id="connectApiKeyInput" name="apikey" placeholder="API Key (X-Master-Key)" autocomplete="off">
       <button type="submit" class="btn btn-primary">Connect</button>
     </form>
@@ -547,16 +549,21 @@
     <details class="cloud-section">
       <summary><h3 style="margin:0;">Cloud Sync (JSONBin.io)</h3><span class="chevron">\u25bc</span></summary>
       <div class="collapsible-body">
-      <p class="sub">Saves the <strong>full data</strong> — every snapshot, item, and change history — to a shared JSONBin.io bin. Sign up free at jsonbin.io, copy your API key from the API Keys page, and paste it below. The first "Save to Cloud" click creates your team's bin and shows its ID; share that key + ID with teammates (or bake them into this file) so everyone reads and writes the same data.</p>
+      <p class="sub">Saves your data to JSONBin.io. Each site gets its <strong>own bin</strong> — combining everything into one bin eventually outgrows JSONBin's per-record size limit, so this keeps every save well under that line. There's also one small shared bin for approved emails and category access. Sign up free at jsonbin.io, copy your API key from the API Keys page, and paste it below — the first save for each site creates that site's bin automatically and fills in its ID.</p>
       <div class="cloud-fields">
         <div class="field"><label for="jsonbinKeyInput">API Key (X-Master-Key) — starts with $2a$10$</label><input type="text" id="jsonbinKeyInput" placeholder="$2a$10$…"></div>
-        <div class="field"><label for="jsonbinBinIdInput">Bin ID (blank the first time) — short hex string</label><input type="text" id="jsonbinBinIdInput" placeholder="auto-filled after first save"></div>
+      </div>
+      <div class="cloud-fields cloud-fields-bins">
+        <div class="field"><label for="jsonbinBinConfig">Config Bin (approved emails / access) — blank the first time</label><input type="text" id="jsonbinBinConfig" placeholder="auto-filled after first save"></div>
+        <div class="field"><label for="jsonbinBinSTS1">STS1 Bin — blank the first time</label><input type="text" id="jsonbinBinSTS1" placeholder="auto-filled after first save"></div>
+        <div class="field"><label for="jsonbinBinSTS2">STS2 Bin — blank the first time</label><input type="text" id="jsonbinBinSTS2" placeholder="auto-filled after first save"></div>
+        <div class="field"><label for="jsonbinBinSTS3">STS3 Bin — blank the first time</label><input type="text" id="jsonbinBinSTS3" placeholder="auto-filled after first save"></div>
+        <div class="field"><label for="jsonbinBinSTS4">STS4 Bin — blank the first time</label><input type="text" id="jsonbinBinSTS4" placeholder="auto-filled after first save"></div>
       </div>
       <div class="backup-actions">
         <button class="btn btn-ghost" id="cloudSaveBtn">Save to Cloud</button>
         <button class="btn btn-ghost" id="cloudLoadBtn">Load from Cloud</button>
-        <button class="btn btn-ghost" id="clearCloudBtn">Clear Cloud Data</button>
-        <button class="btn btn-ghost" id="cloudSwapBtn" title="Swap these two fields if they ended up in the wrong boxes">Swap Values</button>
+        <button class="btn btn-ghost" id="clearCloudBtn">Clear Cloud Data (current site)</button>
       </div>
       <label class="autosave-toggle"><input type="checkbox" id="autoCloudSaveToggle" checked> Auto-save my changes to the cloud (a few seconds after each edit, on this device only)</label>
       <span class="autosave-status" id="autoCloudSaveStatus"></span>
@@ -678,15 +685,24 @@
   // box, with no per-person setup. Leave blank and each person pastes
   // their own key/Bin ID into the Cloud Sync section further down.
   var DEFAULT_JSONBIN_KEY = '';
-  var DEFAULT_JSONBIN_BINID = '';
   var JSONBIN_BASE = 'https://api.jsonbin.io/v3/b';
+  // One bin per site, plus a small separate "config" bin for approved
+  // emails and category permissions. A single combined bin eventually
+  // outgrows JSONBin's per-record size limit as snapshots, comments, and
+  // ITC history accumulate — this keeps every individual save well under
+  // that line, and each site's data is independent of the others' size.
+  var SITE_BIN_KEYS = ['config', 'STS1', 'STS2', 'STS3', 'STS4'];
 
   async function getJsonbinCredentials(){
     var k = await storeGet('cloud:jsonbin_key');
-    var b = await storeGet('cloud:jsonbin_binid');
+    var bins = {};
+    for (var i = 0; i < SITE_BIN_KEYS.length; i++){
+      var b = await storeGet('cloud:jsonbin_binid_' + SITE_BIN_KEYS[i]);
+      bins[SITE_BIN_KEYS[i]] = (b && b.value) ? b.value : '';
+    }
     return {
       apiKey: (k && k.value) ? k.value : DEFAULT_JSONBIN_KEY,
-      binId: (b && b.value) ? b.value : DEFAULT_JSONBIN_BINID
+      bins: bins
     };
   }
 
@@ -710,11 +726,31 @@
     return (data && data.record) ? data.record : null;
   }
 
+  // Creates a new bin (used the first time a given site, or the config
+  // bin, doesn't have one yet) and persists its ID for next time.
+  async function createJsonbinBin(apiKey, binKey, initialPayload, name){
+    var res = await fetch(JSONBIN_BASE, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-Master-Key': apiKey, 'X-Bin-Name': name },
+      body: JSON.stringify(initialPayload)
+    });
+    var data = null;
+    try { data = await res.json(); } catch(e){}
+    if (!res.ok || !data || !data.metadata || !data.metadata.id){
+      throw new Error((data && data.message) ? data.message : ('HTTP ' + res.status + ' — could not create bin'));
+    }
+    var newBinId = data.metadata.id;
+    await storeSet('cloud:jsonbin_binid_' + binKey, newBinId);
+    var input = document.getElementById(binKey === 'config' ? 'jsonbinBinConfig' : 'jsonbinBin' + binKey);
+    if (input) input.value = newBinId;
+    return newBinId;
+  }
+
   async function loadApprovedEmails(){
     var creds = await getJsonbinCredentials();
-    if (!creds.apiKey || !creds.binId) return [];
+    if (!creds.apiKey || !creds.bins.config) return [];
     try {
-      var record = await fetchCloudRecord(creds.apiKey, creds.binId);
+      var record = await fetchCloudRecord(creds.apiKey, creds.bins.config);
       return (record && Array.isArray(record.approvedEmails)) ? record.approvedEmails : [];
     } catch(e){
       console.log('Could not load approved emails from Cloud Sync:', e);
@@ -724,11 +760,15 @@
 
   async function saveApprovedEmails(list){
     var creds = await getJsonbinCredentials();
-    if (!creds.apiKey || !creds.binId) throw new Error('Cloud Sync isn\u2019t configured yet — set an API key and Bin ID below first.');
-    var existing = await fetchCloudRecord(creds.apiKey, creds.binId).catch(function(){ return null; });
-    var payload = existing || { exportedFrom: 'Rework Tracker', exportedAt: new Date().toISOString(), snapshots: [] };
+    if (!creds.apiKey) throw new Error('Cloud Sync isn\u2019t configured yet — set an API key above first.');
+    if (!creds.bins.config){
+      await createJsonbinBin(creds.apiKey, 'config', { exportedFrom: 'Rework Tracker Config', approvedEmails: list, categoryPermissions: {} }, 'Rework Tracker Config');
+      return;
+    }
+    var existing = await fetchCloudRecord(creds.apiKey, creds.bins.config).catch(function(){ return null; });
+    var payload = existing || { exportedFrom: 'Rework Tracker Config' };
     payload.approvedEmails = list;
-    await jsonbinRequest('PUT', JSONBIN_BASE + '/' + creds.binId, creds.apiKey, payload);
+    await jsonbinRequest('PUT', JSONBIN_BASE + '/' + creds.bins.config, creds.apiKey, payload);
   }
 
   // Per-email category access, keyed by lowercased email. Missing entry or
@@ -740,9 +780,9 @@
   // names are shared across sites in practice.
   async function loadCategoryPermissions(){
     var creds = await getJsonbinCredentials();
-    if (!creds.apiKey || !creds.binId) return {};
+    if (!creds.apiKey || !creds.bins.config) return {};
     try {
-      var record = await fetchCloudRecord(creds.apiKey, creds.binId);
+      var record = await fetchCloudRecord(creds.apiKey, creds.bins.config);
       return (record && record.categoryPermissions && typeof record.categoryPermissions === 'object') ? record.categoryPermissions : {};
     } catch(e){
       console.log('Could not load category permissions from Cloud Sync:', e);
@@ -752,11 +792,15 @@
 
   async function saveCategoryPermissions(map){
     var creds = await getJsonbinCredentials();
-    if (!creds.apiKey || !creds.binId) throw new Error('Cloud Sync isn\u2019t configured yet — set an API key and Bin ID below first.');
-    var existing = await fetchCloudRecord(creds.apiKey, creds.binId).catch(function(){ return null; });
-    var payload = existing || { exportedFrom: 'Rework Tracker', exportedAt: new Date().toISOString(), snapshots: [] };
+    if (!creds.apiKey) throw new Error('Cloud Sync isn\u2019t configured yet — set an API key above first.');
+    if (!creds.bins.config){
+      await createJsonbinBin(creds.apiKey, 'config', { exportedFrom: 'Rework Tracker Config', approvedEmails: [], categoryPermissions: map }, 'Rework Tracker Config');
+      return;
+    }
+    var existing = await fetchCloudRecord(creds.apiKey, creds.bins.config).catch(function(){ return null; });
+    var payload = existing || { exportedFrom: 'Rework Tracker Config' };
     payload.categoryPermissions = map;
-    await jsonbinRequest('PUT', JSONBIN_BASE + '/' + creds.binId, creds.apiKey, payload);
+    await jsonbinRequest('PUT', JSONBIN_BASE + '/' + creds.bins.config, creds.apiKey, payload);
   }
 
   // ---------- DOM refs ----------
@@ -890,15 +934,15 @@
     var tableRows = rows.map(function(r){
       var pct = r.total ? Math.round(r.pass / r.total * 100) : 0;
       return '<tr' + (r.isSiteTotal ? ' class="site-total-row"' : '') + '>' +
-        '<td>' + escapeHtml(r.site) + '</td>' +
-        '<td>' + escapeHtml(r.date) + '</td>' +
-        '<td' + (r.isSiteTotal ? ' style="font-weight:700;"' : '') + '>' + escapeHtml(r.category) + '</td>' +
-        '<td>' + r.total + '</td>' +
-        '<td>' + r.pass + '</td>' +
-        '<td>' + r.reWork + '</td>' +
-        '<td>' + r.aq + '</td>' +
-        '<td>' + r.ac + '</td>' +
-        '<td>' + pct + '%</td>' +
+        '<td data-label="Site">' + escapeHtml(r.site) + '</td>' +
+        '<td data-label="Snapshot Date">' + escapeHtml(r.date) + '</td>' +
+        '<td data-label="Category"' + (r.isSiteTotal ? ' style="font-weight:700;"' : '') + '>' + escapeHtml(r.category) + '</td>' +
+        '<td data-label="Total">' + r.total + '</td>' +
+        '<td data-label="Pass">' + r.pass + '</td>' +
+        '<td data-label="Re-work">' + r.reWork + '</td>' +
+        '<td data-label="Ready for Quality">' + r.aq + '</td>' +
+        '<td data-label="Awaiting Construction">' + r.ac + '</td>' +
+        '<td data-label="Pass %">' + pct + '%</td>' +
       '</tr>';
     }).join('');
 
@@ -1118,7 +1162,7 @@
 
   async function initAccessGate(){
     var creds = await getJsonbinCredentials();
-    if (!creds.apiKey || !creds.binId){
+    if (!creds.apiKey || !creds.bins.config){
       loginGate.style.display = 'none';
       renderAccountBar();
       return;
@@ -1169,7 +1213,7 @@
       connectNote.textContent = 'These looked swapped, so I corrected the order automatically.';
       corrected = true;
     }
-    await storeSet('cloud:jsonbin_binid', binId);
+    await storeSet('cloud:jsonbin_binid_config', binId);
     await storeSet('cloud:jsonbin_key', apiKey);
     if (corrected){
       await new Promise(function(resolve){ setTimeout(resolve, 1400); });
@@ -1184,7 +1228,7 @@
 
   async function initGates(){
     var creds = await getJsonbinCredentials();
-    if (!creds.apiKey || !creds.binId){
+    if (!creds.apiKey || !creds.bins.config){
       connectGate.style.display = 'flex';
     } else {
       await initAccessGate();
@@ -1968,9 +2012,10 @@
         e.stopPropagation();
         var date = btn.getAttribute('data-del-cloud');
         var apiKey = jsonbinKeyInput ? jsonbinKeyInput.value.trim() : '';
-        var binId = jsonbinBinIdInput ? jsonbinBinIdInput.value.trim() : '';
+        var binInput = jsonbinBinInputs[currentSite];
+        var binId = binInput ? binInput.value.trim() : '';
         if (!apiKey || !binId){
-          alert('Cloud Sync isn\u2019t configured \u2014 set an API key and Bin ID in the Cloud Sync section first.');
+          alert('Cloud Sync isn\u2019t configured for ' + currentSite + ' yet \u2014 set an API key and a ' + currentSite + ' Bin ID in the Cloud Sync section first.');
           return;
         }
         if (!confirm('Delete the ' + currentSite + ' snapshot for ' + date + ' from the cloud? This affects everyone using this bin and cannot be undone. (This only removes it from the cloud \u2014 your local copy, if any, stays put.)')) return;
@@ -2097,10 +2142,15 @@
   // jsonbinRequest, and credential resolution are defined earlier, up
   // near the storage abstraction, since the access gate needs them too.)
   var jsonbinKeyInput = document.getElementById('jsonbinKeyInput');
-  var jsonbinBinIdInput = document.getElementById('jsonbinBinIdInput');
+  var jsonbinBinInputs = {
+    config: document.getElementById('jsonbinBinConfig'),
+    STS1: document.getElementById('jsonbinBinSTS1'),
+    STS2: document.getElementById('jsonbinBinSTS2'),
+    STS3: document.getElementById('jsonbinBinSTS3'),
+    STS4: document.getElementById('jsonbinBinSTS4')
+  };
   var cloudSaveBtn = document.getElementById('cloudSaveBtn');
   var cloudLoadBtn = document.getElementById('cloudLoadBtn');
-  var cloudSwapBtn = document.getElementById('cloudSwapBtn');
   var cloudResult = document.getElementById('cloudResult');
   var autoCloudSaveToggle = document.getElementById('autoCloudSaveToggle');
   var autoCloudSaveStatus = document.getElementById('autoCloudSaveStatus');
@@ -2121,13 +2171,14 @@
   // The core fix for concurrent editing: fetches the LATEST cloud data
   // right before saving, and merges in only the specific snapshot(s)
   // passed in — rather than overwriting the whole cloud dataset with
-  // this device's local copy. If someone else edited a different site or
-  // date in the meantime, fetching fresh means their change is still
-  // sitting in "existing" and survives the merge untouched. This doesn't
-  // fully protect two people editing the exact same table at the exact
-  // same moment (whoever saves last still wins for that one snapshot),
-  // but that's a much narrower window than the old "overwrite
-  // everything" behavior.
+  // this device's local copy. If someone else edited a different date on
+  // this same site in the meantime, fetching fresh means their change is
+  // still sitting in "existing" and survives the merge untouched. This
+  // doesn't fully protect two people editing the exact same table at the
+  // exact same moment (whoever saves last still wins for that one
+  // snapshot), but that's a much narrower window than the old "overwrite
+  // everything" behavior. Each site has its own bin now, so this only
+  // ever touches one site's data per call — never another site's.
   async function mergeSnapshotsToCloud(apiKey, binId, snapshotsToMerge){
     var existing = await fetchCloudRecord(apiKey, binId).catch(function(){ return null; });
     var payload = existing || { exportedFrom: 'Rework Tracker', exportedAt: new Date().toISOString(), snapshots: [] };
@@ -2145,20 +2196,37 @@
     return payload;
   }
 
+  // Saves (or creates, on first use) the bin for one specific site.
+  async function saveSiteSnapshotsToCloud(apiKey, site, snapshotsForThisSite){
+    var input = jsonbinBinInputs[site];
+    var binId = input ? input.value.trim() : '';
+    if (!binId){
+      var initial = { exportedFrom: 'Rework Tracker', exportedAt: new Date().toISOString(), site: site, snapshots: snapshotsForThisSite };
+      var newBinId = await createJsonbinBin(apiKey, site, initial, 'Rework Tracker - ' + site);
+      return { snapshots: snapshotsForThisSite, binId: newBinId, created: true };
+    }
+    var merged = await mergeSnapshotsToCloud(apiKey, binId, snapshotsForThisSite);
+    return { snapshots: merged.snapshots, binId: binId, created: false };
+  }
+
   async function performAutoCloudSave(){
     var apiKey = jsonbinKeyInput.value.trim();
-    var binId = jsonbinBinIdInput.value.trim();
-    if (!apiKey || !binId){
-      autoCloudSaveStatus.textContent = 'Auto-save needs both an API key and a Bin ID above.';
+    if (!apiKey){
+      autoCloudSaveStatus.textContent = 'Auto-save needs an API key above.';
       return;
     }
     if (!currentRecord){
       autoCloudSaveStatus.textContent = '';
       return;
     }
+    var site = currentRecord.site || currentSite;
+    if (!jsonbinBinInputs[site]){
+      autoCloudSaveStatus.textContent = 'Auto-save doesn\u2019t have a bin field configured for ' + site + ' yet.';
+      return;
+    }
     autoCloudSaveStatus.textContent = 'Auto-saving\u2026';
     try {
-      await mergeSnapshotsToCloud(apiKey, binId, [currentRecord]);
+      await saveSiteSnapshotsToCloud(apiKey, site, [currentRecord]);
       var now = new Date();
       autoCloudSaveStatus.textContent = 'Auto-saved to cloud at ' + now.toLocaleTimeString();
     } catch(err){
@@ -2185,44 +2253,47 @@
   }
 
   // JSONBin API keys are bcrypt-shaped ($2a$10$... or $2b$10$...); Bin
-  // IDs are short hex strings. Not a hard guarantee, but different
-  // enough to catch the two fields being swapped, which is an easy
-  // mistake with two cryptic-looking strings.
+  // IDs are short hex strings. Flags a bin field that was accidentally
+  // given the API key's value instead (or vice versa with the key
+  // field) — an easy mistake with several cryptic-looking strings on one
+  // page now that there are multiple bin fields instead of just one.
   function checkCloudFieldFormats(){
     var key = jsonbinKeyInput.value.trim();
-    var bin = jsonbinBinIdInput.value.trim();
-    if (!key || !bin) return;
-    var keyLooksLikeBin = /^[a-f0-9]{20,}$/i.test(key) && !/^\$2[ab]\$/.test(key);
-    var binLooksLikeKey = /^\$2[ab]\$/.test(bin);
-    if (keyLooksLikeBin || binLooksLikeKey){
-      showCloudResult('<strong>These two fields look swapped</strong> — the API Key should start with <code>$2a$10$</code> or similar, and the Bin ID should be a short hex string. Click "Swap Values" below to fix it.');
+    if (key && /^[a-f0-9]{20,}$/i.test(key) && !/^\$2[ab]\$/.test(key)){
+      showCloudResult('<strong>The API Key field looks like it has a Bin ID in it</strong> \u2014 the API Key should start with <code>$2a$10$</code> or similar.');
+      return;
+    }
+    var mismatched = [];
+    Object.keys(jsonbinBinInputs).forEach(function(site){
+      var val = jsonbinBinInputs[site].value.trim();
+      if (val && /^\$2[ab]\$/.test(val)) mismatched.push(site);
+    });
+    if (mismatched.length){
+      showCloudResult('<strong>The ' + mismatched.join(', ') + ' Bin field' + (mismatched.length > 1 ? 's look' : ' looks') + ' like it has the API Key in it</strong> \u2014 a Bin ID should be a short hex string, not start with <code>$2a$10$</code>.');
     }
   }
 
-  // Remember key/bin ID on this browser when storage allows it, so at
-  // least repeat visits on the same device don't need re-entering them.
-  // Falls back to DEFAULT_JSONBIN_KEY/BINID if nothing's stored yet.
+  // Remember the key and every site's bin ID on this browser when storage
+  // allows it, so repeat visits on the same device don't need re-entering
+  // them.
   (async function initCloudFields(){
     var creds = await getJsonbinCredentials();
     jsonbinKeyInput.value = creds.apiKey;
-    jsonbinBinIdInput.value = creds.binId;
+    Object.keys(jsonbinBinInputs).forEach(function(site){
+      jsonbinBinInputs[site].value = creds.bins[site] || '';
+    });
     checkCloudFieldFormats();
   })();
   jsonbinKeyInput.addEventListener('change', function(){ storeSet('cloud:jsonbin_key', jsonbinKeyInput.value.trim()); checkCloudFieldFormats(); });
-  jsonbinBinIdInput.addEventListener('change', function(){ storeSet('cloud:jsonbin_binid', jsonbinBinIdInput.value.trim()); checkCloudFieldFormats(); });
-  cloudSwapBtn.addEventListener('click', function(){
-    var key = jsonbinKeyInput.value;
-    jsonbinKeyInput.value = jsonbinBinIdInput.value;
-    jsonbinBinIdInput.value = key;
-    storeSet('cloud:jsonbin_key', jsonbinKeyInput.value.trim());
-    storeSet('cloud:jsonbin_binid', jsonbinBinIdInput.value.trim());
-    checkCloudFieldFormats();
-    showCloudResult('Swapped. Values now saved in the corrected order.');
+  Object.keys(jsonbinBinInputs).forEach(function(site){
+    jsonbinBinInputs[site].addEventListener('change', function(){
+      storeSet('cloud:jsonbin_binid_' + site, jsonbinBinInputs[site].value.trim());
+      checkCloudFieldFormats();
+    });
   });
 
   cloudSaveBtn.addEventListener('click', async function(){
     var apiKey = jsonbinKeyInput.value.trim();
-    var binId = jsonbinBinIdInput.value.trim();
     if (!apiKey){
       showCloudResult('Paste your JSONBin.io API key above first.');
       return;
@@ -2232,32 +2303,34 @@
     showCloudResult('Saving to JSONBin.io…');
     try {
       var payload = await buildBackupPayload();
-      if (binId){
-        // Merge rather than overwrite: fetches the latest cloud data and
-        // upserts each snapshot this device knows about, so a snapshot
-        // that exists in the cloud but was never loaded on this device
-        // (e.g. someone else uploaded it from theirs) survives instead
-        // of being wiped by a full replace.
-        var merged = await mergeSnapshotsToCloud(apiKey, binId, payload.snapshots);
-        showCloudResult('Saved ' + payload.snapshots.length + ' snapshot' + (payload.snapshots.length === 1 ? '' : 's') + ' to bin <strong>' + escapeHtml(binId) + '</strong> (bin now has ' + merged.snapshots.length + ' total).');
-      } else {
-        var res = await fetch(JSONBIN_BASE, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'X-Master-Key': apiKey, 'X-Bin-Name': 'Rework Tracker Data' },
-          body: JSON.stringify(payload)
-        });
-        var data = null;
-        try { data = await res.json(); } catch(e){}
-        if (!res.ok || !data || !data.metadata || !data.metadata.id){
-          throw new Error((data && data.message) ? data.message : ('HTTP ' + res.status + ' — could not create bin'));
-        }
-        var newBinId = data.metadata.id;
-        jsonbinBinIdInput.value = newBinId;
-        storeSet('cloud:jsonbin_binid', newBinId);
-        showCloudResult('Created a new shared bin and saved ' + payload.snapshots.length + ' snapshot' + (payload.snapshots.length === 1 ? '' : 's') + '.<br><br>' +
-          '<strong>Bin ID: ' + escapeHtml(newBinId) + '</strong><br>' +
-          'Share this Bin ID and your API key with your team so everyone points at the same data — or tell me both and I\u2019ll bake them into the file before you redistribute it.');
+      // Group this device's snapshots by site, then save each group to
+      // that site's own bin — never one combined save across all sites.
+      var bySite = {};
+      payload.snapshots.forEach(function(snap){
+        var site = snap.site || 'STS1';
+        if (!bySite[site]) bySite[site] = [];
+        bySite[site].push(snap);
+      });
+      var sites = Object.keys(bySite);
+      if (!sites.length){
+        showCloudResult('Nothing to save yet \u2014 upload a snapshot first.');
+        return;
       }
+      var resultLines = [];
+      for (var i = 0; i < sites.length; i++){
+        var site = sites[i];
+        if (!jsonbinBinInputs[site]){
+          resultLines.push(site + ': skipped \u2014 no bin field configured for this site.');
+          continue;
+        }
+        try {
+          var result = await saveSiteSnapshotsToCloud(apiKey, site, bySite[site]);
+          resultLines.push(site + ': ' + (result.created ? 'created new bin ' + escapeHtml(result.binId) + ', ' : '') + 'saved ' + bySite[site].length + ' snapshot' + (bySite[site].length === 1 ? '' : 's') + ' (bin now has ' + result.snapshots.length + ' total).');
+        } catch(siteErr){
+          resultLines.push(site + ': <strong>failed</strong> \u2014 ' + escapeHtml(siteErr && siteErr.message ? siteErr.message : String(siteErr)));
+        }
+      }
+      showCloudResult(resultLines.join('<br>'));
     } catch(err){
       showCloudResult('<strong>Save failed:</strong> ' + escapeHtml(err && err.message ? err.message : String(err)));
     } finally {
@@ -2268,27 +2341,42 @@
 
   cloudLoadBtn.addEventListener('click', async function(){
     var apiKey = jsonbinKeyInput.value.trim();
-    var binId = jsonbinBinIdInput.value.trim();
-    if (!apiKey || !binId){
-      showCloudResult('Need both an API key and a Bin ID to load — save once first if you don\u2019t have a Bin ID yet.');
+    if (!apiKey){
+      showCloudResult('Paste your JSONBin.io API key above first.');
+      return;
+    }
+    var sitesWithBins = Object.keys(jsonbinBinInputs).filter(function(s){ return s !== 'config' && jsonbinBinInputs[s].value.trim(); });
+    if (!sitesWithBins.length){
+      showCloudResult('No site bins configured yet \u2014 save once first if you don\u2019t have any Bin IDs yet.');
       return;
     }
     cloudLoadBtn.disabled = true;
     cloudLoadBtn.textContent = 'Loading…';
     showCloudResult('Loading from JSONBin.io…');
     try {
-      var data = await jsonbinRequest('GET', JSONBIN_BASE + '/' + binId + '/latest', apiKey, null);
-      var payload = data && data.record;
-      if (!payload || !Array.isArray(payload.snapshots)){
-        throw new Error('This bin doesn\u2019t look like Rework Tracker data (no snapshots array found).');
+      var allSnapshots = [];
+      var loadErrors = [];
+      for (var i = 0; i < sitesWithBins.length; i++){
+        var site = sitesWithBins[i];
+        var binId = jsonbinBinInputs[site].value.trim();
+        try {
+          var data = await jsonbinRequest('GET', JSONBIN_BASE + '/' + binId + '/latest', apiKey, null);
+          var record = data && data.record;
+          if (record && Array.isArray(record.snapshots)) allSnapshots = allSnapshots.concat(record.snapshots);
+        } catch(siteErr){
+          loadErrors.push(site + ': ' + (siteErr && siteErr.message ? siteErr.message : String(siteErr)));
+        }
+      }
+      if (!allSnapshots.length && loadErrors.length){
+        throw new Error(loadErrors.join('; '));
       }
       var existing = await loadAllSnapshotsAllSites();
-      var msg = 'Load ' + payload.snapshots.length + ' snapshot' + (payload.snapshots.length === 1 ? '' : 's') + ' from the cloud' +
+      var msg = 'Load ' + allSnapshots.length + ' snapshot' + (allSnapshots.length === 1 ? '' : 's') + ' from the cloud' +
         (existing.length ? ' — this will overwrite any site+date combinations that already exist locally' : '') + '. Continue?';
       if (!confirm(msg)) return;
 
-      await applyImportedSnapshots(payload.snapshots);
-      showCloudResult('Loaded ' + payload.snapshots.length + ' snapshot' + (payload.snapshots.length === 1 ? '' : 's') + ' from the cloud.');
+      await applyImportedSnapshots(allSnapshots);
+      showCloudResult('Loaded ' + allSnapshots.length + ' snapshot' + (allSnapshots.length === 1 ? '' : 's') + ' from the cloud.' + (loadErrors.length ? '<br>Some sites failed to load: ' + escapeHtml(loadErrors.join('; ')) : ''));
     } catch(err){
       showCloudResult('<strong>Load failed:</strong> ' + escapeHtml(err && err.message ? err.message : String(err)));
     } finally {
@@ -2300,29 +2388,27 @@
   var clearCloudBtn = document.getElementById('clearCloudBtn');
   clearCloudBtn.addEventListener('click', async function(){
     var apiKey = jsonbinKeyInput.value.trim();
-    var binId = jsonbinBinIdInput.value.trim();
+    var site = currentSite;
+    var input = jsonbinBinInputs[site];
+    var binId = input ? input.value.trim() : '';
     if (!apiKey || !binId){
-      showCloudResult('Need both an API key and a Bin ID to clear.');
+      showCloudResult('Need both an API key and a ' + site + ' Bin ID to clear.');
       return;
     }
-    if (!confirm('Clear all snapshot data in cloud bin ' + binId + '? This affects everyone using this bin and cannot be undone. The bin itself and your credentials stay valid — only the data is wiped.')) return;
+    if (!confirm('Clear all snapshot data in the ' + site + ' cloud bin (' + binId + ')? This affects everyone using this bin and cannot be undone. Other sites are not affected. The bin itself and your credentials stay valid — only the data is wiped.')) return;
 
     clearCloudBtn.disabled = true;
     clearCloudBtn.textContent = 'Clearing…';
-    showCloudResult('Clearing cloud data…');
+    showCloudResult('Clearing ' + site + ' cloud data…');
     try {
-      // Preserve the approved-emails list — clearing snapshots shouldn't
-      // also silently lock everyone out of the access gate.
-      var existing = await fetchCloudRecord(apiKey, binId).catch(function(){ return null; });
-      var payload = { exportedFrom: 'Rework Tracker', exportedAt: new Date().toISOString(), snapshots: [] };
-      if (existing && Array.isArray(existing.approvedEmails)) payload.approvedEmails = existing.approvedEmails;
+      var payload = { exportedFrom: 'Rework Tracker', exportedAt: new Date().toISOString(), site: site, snapshots: [] };
       await jsonbinRequest('PUT', JSONBIN_BASE + '/' + binId, apiKey, payload);
-      showCloudResult('Cloud data cleared. The Bin ID and API key are still valid \u2014 "Save to Cloud" will start fresh from here.');
+      showCloudResult(site + ' cloud data cleared. The Bin ID and API key are still valid \u2014 "Save to Cloud" will start fresh from here.');
     } catch(err){
       showCloudResult('<strong>Clear failed:</strong> ' + escapeHtml(err && err.message ? err.message : String(err)));
     } finally {
       clearCloudBtn.disabled = false;
-      clearCloudBtn.textContent = 'Clear Cloud Data';
+      clearCloudBtn.textContent = 'Clear Cloud Data (current site)';
     }
   });
 
@@ -3188,29 +3274,39 @@
   // interrupting anyone over if it fails.
   async function periodicCloudRefresh(){
     var apiKey = jsonbinKeyInput.value.trim();
-    var binId = jsonbinBinIdInput.value.trim();
-    if (!apiKey || !binId) return;
+    if (!apiKey) return;
+    var sitesWithBins = Object.keys(jsonbinBinInputs).filter(function(s){ return s !== 'config' && jsonbinBinInputs[s].value.trim(); });
+    if (!sitesWithBins.length) return;
 
     try {
-      var cloudData = await fetchCloudRecord(apiKey, binId);
-      if (!cloudData || !Array.isArray(cloudData.snapshots)) return;
-
       var touchedCurrentlyViewed = false;
-      for (var i = 0; i < cloudData.snapshots.length; i++){
-        var cloudSnap = cloudData.snapshots[i];
-        if (!cloudSnap || !cloudSnap.date) continue;
-        var site = cloudSnap.site || 'STS1';
-        var key = 'rework:' + site + ':' + cloudSnap.date;
-        var localRaw = await storeGetShared(key);
-        var local = localRaw && localRaw.value ? JSON.parse(localRaw.value) : null;
+      for (var s = 0; s < sitesWithBins.length; s++){
+        var site = sitesWithBins[s];
+        var binId = jsonbinBinInputs[site].value.trim();
+        var cloudData;
+        try {
+          cloudData = await fetchCloudRecord(apiKey, binId);
+        } catch(siteErr){
+          continue; // one site's bin having trouble shouldn't block checking the others
+        }
+        if (!cloudData || !Array.isArray(cloudData.snapshots)) continue;
 
-        var cloudModified = cloudSnap.lastModifiedAt || cloudSnap.uploadedAt || '';
-        var localModified = local ? (local.lastModifiedAt || local.uploadedAt || '') : '';
+        for (var i = 0; i < cloudData.snapshots.length; i++){
+          var cloudSnap = cloudData.snapshots[i];
+          if (!cloudSnap || !cloudSnap.date) continue;
+          var snapSite = cloudSnap.site || site;
+          var key = 'rework:' + snapSite + ':' + cloudSnap.date;
+          var localRaw = await storeGetShared(key);
+          var local = localRaw && localRaw.value ? JSON.parse(localRaw.value) : null;
 
-        if (!local || (cloudModified && new Date(cloudModified) > new Date(localModified))){
-          await storeSetShared(key, JSON.stringify(cloudSnap));
-          if (currentRecord && (currentRecord.site || currentSite) === site && currentRecord.date === cloudSnap.date){
-            touchedCurrentlyViewed = true;
+          var cloudModified = cloudSnap.lastModifiedAt || cloudSnap.uploadedAt || '';
+          var localModified = local ? (local.lastModifiedAt || local.uploadedAt || '') : '';
+
+          if (!local || (cloudModified && new Date(cloudModified) > new Date(localModified))){
+            await storeSetShared(key, JSON.stringify(cloudSnap));
+            if (currentRecord && (currentRecord.site || currentSite) === snapSite && currentRecord.date === cloudSnap.date){
+              touchedCurrentlyViewed = true;
+            }
           }
         }
       }
