@@ -700,6 +700,18 @@
       var b = await storeGet('cloud:jsonbin_binid_' + SITE_BIN_KEYS[i]);
       bins[SITE_BIN_KEYS[i]] = (b && b.value) ? b.value : '';
     }
+    // Before the per-site split there was one combined bin, stored under
+    // 'cloud:jsonbin_binid'. Anyone whose browser already had it saved
+    // would otherwise land back on the Connect screen, because the new
+    // code only looks at the config slot. Carry the old value across
+    // once so existing devices keep working without re-entering it.
+    if (!bins.config){
+      var legacy = await storeGet('cloud:jsonbin_binid');
+      if (legacy && legacy.value){
+        bins.config = legacy.value;
+        await storeSet('cloud:jsonbin_binid_config', legacy.value);
+      }
+    }
     return {
       apiKey: (k && k.value) ? k.value : DEFAULT_JSONBIN_KEY,
       bins: bins
