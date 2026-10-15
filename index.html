@@ -1238,7 +1238,20 @@
     initAccessGate(); // steps aside on its own since credentials are still empty
   });
 
+  // Email sign-in is switched off: anyone who opens the app gets in and
+  // just types a name for the change history ("Editing as"). The sign-in
+  // and Connect code below is left intact, so setting this back to true
+  // restores the approved-email gate. While it is false, the approved
+  // list and per-email category restrictions don't apply to anyone.
+  var REQUIRE_EMAIL_LOGIN = false;
+
   async function initGates(){
+    if (!REQUIRE_EMAIL_LOGIN){
+      connectGate.style.display = 'none';
+      loginGate.style.display = 'none';
+      renderAccountBar();
+      return;
+    }
     var creds = await getJsonbinCredentials();
     if (!creds.apiKey || !creds.bins.config){
       connectGate.style.display = 'flex';
